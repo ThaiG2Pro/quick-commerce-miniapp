@@ -20,6 +20,7 @@
     "build:css": "postcss src/css/tailwind.css -o src/css/styles.css"
   },
   "dependencies": {
+    "@medusajs/medusa-js": "^6.1.10",
     "@react-spring/web": "^9.7.4",
     "@use-gesture/react": "^10.3.1",
     "embla-carousel-autoplay": "^8.3.0",

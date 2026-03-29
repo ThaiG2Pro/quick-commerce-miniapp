@@ -1,3 +1,5 @@
+// @ts-ignore
+import medusa from "./medusa-client";
 import { atom } from "jotai";
 import {
   atomFamily,
@@ -110,28 +112,45 @@ export const categoriesStateUpwrapped = unwrap(
   categoriesState,
   (prev) => prev ?? []
 );
-
 export const productsState = atom(async (get) => {
-  const categories = await get(categoriesState);
-  const products = await requestWithFallback<
-    (Product & { categoryId: number })[]
-  >("/products", []);
-  return products.map((product) => ({
-    ...product,
-    category: categories.find(
-      (category) => category.id === product.categoryId
-    )!,
-  }));
+  try {
+    // 1. Gọi API với Key mới của ông
+    const { products } = await medusa.products.list({}, {
+      "x-publishable-api-key": "pk_c4c2e2da3439360ceea472142d633c8c408ac63c99365de339faad78bc058805" 
+    });
+
+    console.log("🔥 DATA VỀ RỒI:", products);
+
+    // 2. Chuyển đổi dữ liệu
+    return products.map((p: any) => {
+      // Tìm giá VND trong mảng prices
+      const variant = p.variants?.[0];
+      const priceObj = variant?.prices?.find((pr: any) => pr.currency_code === "vnd") 
+                      || variant?.prices?.[0];
+      
+      return {
+        id: String(p.id),
+        name: p.title,
+        price: priceObj?.amount || 0, // Lấy giá, nếu không có thì để 0
+        image: p.thumbnail || "https://via.placeholder.com/150",
+        description: p.description || "Chưa có mô tả",
+        categoryId: p.categories?.[0]?.id || "1", 
+      };
+    });
+  } catch (error) {
+    console.error("❌ LỖI RỒI TRÍ ƠI:", error);
+    return [];
+  }
 });
 
 export const flashSaleProductsState = atom((get) => get(productsState));
 
 export const recommendedProductsState = atom((get) => get(productsState));
 
-export const productState = atomFamily((id: number) =>
+export const productState = atomFamily((id: string) => 
   atom(async (get) => {
     const products = await get(productsState);
-    return products.find((product) => product.id === id);
+    return products.find((product) => String(product.id) === String(id));
   })
 );
 
