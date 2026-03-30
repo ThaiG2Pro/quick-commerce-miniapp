@@ -11,9 +11,24 @@ import Section from "@/components/section";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
-  const product = useAtomValue(productState(Number(id)))!;
+  
+  // Dùng String(id) vì ID của Medusa là chuỗi
+  const product = useAtomValue(productState(String(id))); 
 
   const navigate = useNavigate();
+
+  // Rào chắn chặn lỗi văng app
+  if (!product) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center p-4">
+        <div className="text-xl font-bold mb-2 text-primary">Đang tải dữ liệu...</div>
+        <div className="text-subtitle text-center">
+          Nếu màn hình đứng quá lâu, sản phẩm này có thể không tồn tại.
+        </div>
+      </div>
+    );
+  }
+
   const { addToCart } = useAddToCart(product);
 
   return (

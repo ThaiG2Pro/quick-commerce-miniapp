@@ -122,21 +122,18 @@ export const productsState = atom(async (get) => {
     console.log("🔥 DATA VỀ RỒI:", products);
 
     // 2. Chuyển đổi dữ liệu
-    return products.map((p: any) => {
-      // Tìm giá VND trong mảng prices
-      const variant = p.variants?.[0];
-      const priceObj = variant?.prices?.find((pr: any) => pr.currency_code === "vnd") 
-                      || variant?.prices?.[0];
-      
-      return {
-        id: String(p.id),
-        name: p.title,
-        price: priceObj?.amount || 0, // Lấy giá, nếu không có thì để 0
-        image: p.thumbnail || "https://via.placeholder.com/150",
-        description: p.description || "Chưa có mô tả",
-        categoryId: p.categories?.[0]?.id || "1", 
-      };
-    });
+  // Trong src/state.ts
+return products.map((p: any) => ({
+  // Medusa trả về id là string, nhưng để chắc chắn hãy ép kiểu
+  id: String(p.id), 
+  name: p.title,
+  // Lấy giá VND chuẩn
+  price: p.variants?.[0]?.prices?.find((pr: any) => pr.currency_code === "vnd")?.amount || 0,
+  image: p.thumbnail || "https://via.placeholder.com/150",
+  description: p.description || "",
+  // Lấy Category để Giang nhập
+  categoryName: p.categories?.[0]?.name || "Khác",
+}));
   } catch (error) {
     console.error("❌ LỖI RỒI TRÍ ƠI:", error);
     return [];
