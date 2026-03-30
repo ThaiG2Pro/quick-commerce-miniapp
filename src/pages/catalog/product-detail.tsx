@@ -65,12 +65,12 @@ export default function ProductDetailPage() {
           </div>
           <ShareButton product={product} />
         </div>
-        {product.detail && (
+        {product.description && (
           <>
             <div className="bg-background h-2 w-full"></div>
             <Section title="Mô tả sản phẩm">
               <div className="text-sm whitespace-pre-wrap text-subtitle p-4 pt-2">
-                {product.detail}
+                {product.description}
               </div>
             </Section>
           </>
