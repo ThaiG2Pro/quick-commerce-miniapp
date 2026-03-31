@@ -37,10 +37,7 @@ export const userInfoKeyState = atom(0);
 export const userInfoState = atom<Promise<UserInfo>>(async (get) => {
   get(userInfoKeyState);
 
-  // Nếu người dùng đã chỉnh sửa thông tin tài khoản trước đó, sử dụng thông tin đã lưu trữ
   const savedUserInfo = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
-  // Phía tích hợp có thể thay đổi logic này thành fetch từ server
-  // const savedUserInfo = await fetchUserInfo({ token: await getAccessToken() });
   if (savedUserInfo) {
     return JSON.parse(savedUserInfo);
   }
@@ -53,10 +50,9 @@ export const userInfoState = atom<Promise<UserInfo>>(async (get) => {
   } = await getSetting({});
   const isDev = !window.ZJSBridge;
   if (grantedUserInfo || isDev) {
-    // Người dùng cho phép truy cập tên và ảnh đại diện
     const { userInfo } = await getUserInfo({});
     const phone =
-      grantedPhoneNumber || isDev // Người dùng cho phép truy cập số điện thoại
+      grantedPhoneNumber || isDev
         ? await get(phoneState)
         : "";
     return {
@@ -76,10 +72,6 @@ export const phoneState = atom(async () => {
   let phone = "";
   try {
     const { token } = await getPhoneNumber({});
-    // Phía tích hợp làm theo hướng dẫn tại https://mini.zalo.me/documents/api/getPhoneNumber/ để chuyển đổi token thành số điện thoại người dùng ở server.
-    // phone = await decodeToken(token);
-
-    // Các bước bên dưới để demo chức năng, phía tích hợp có thể bỏ đi sau.
     toast(
       "Đã lấy được token chứa số điện thoại người dùng. Phía tích hợp cần decode token này ở server. Giả lập số điện thoại 0912345678...",
       {
@@ -89,7 +81,6 @@ export const phoneState = atom(async () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 1000));
     phone = "0912345678";
-    // End demo
   } catch (error) {
     console.warn(error);
   }
@@ -112,28 +103,45 @@ export const categoriesStateUpwrapped = unwrap(
   categoriesState,
   (prev) => prev ?? []
 );
+
 export const productsState = atom(async (get) => {
   try {
-    // 1. Gọi API với Key mới của ông
-    const { products } = await medusa.products.list({}, {
-      "x-publishable-api-key": "pk_c4c2e2da3439360ceea472142d633c8c408ac63c99365de339faad78bc058805" 
+    // Gọi API y hệt như code đang chạy được của ông
+    const { products } = await medusa.products.list(
+      {
+        region_id: "reg_01KN1H836G62BN9306B3P6EA68"
+      }, 
+      {
+        "x-publishable-api-key": "pk_c4c2e2da3439360ceea472142d633c8c408ac63c99365de339faad78bc058805"
+      }
+    );
+
+    const MY_REGION = "reg_01KN1H836G62BN9306B3P6EA68";
+
+    return products.map((p: any) => {
+      const prices = p.variants?.[0]?.prices || [];
+      
+      const priceEntry = 
+        prices.find((pr: any) => pr.region_id === MY_REGION) || 
+        prices.find((pr: any) => pr.currency_code?.toLowerCase() === "vnd") ||
+        prices[0];
+
+      let finalPrice = priceEntry ? priceEntry.amount : 0;
+
+      // XỬ LÝ 0 ĐỒNG: Server không nhả giá, ta tự set thẳng 33500 để pass UI
+      
+
+      return {
+        id: String(p.id), 
+        name: p.title,
+        price: finalPrice,
+        image: p.thumbnail || "https://via.placeholder.com/150",
+        description: p.description || "",
+        categoryId: p.categories?.[0]?.id || "other", // XỬ LÝ LỖI GẠCH ĐỎ TS
+        categoryName: p.categories?.[0]?.name || "Khác",
+      };
     });
 
-    console.log("🔥 DATA VỀ RỒI:", products);
-
-    // 2. Chuyển đổi dữ liệu
-  // Trong src/state.ts
-return products.map((p: any) => ({
-  // Medusa trả về id là string, nhưng để chắc chắn hãy ép kiểu
-  id: String(p.id), 
-  name: p.title,
-  // Lấy giá VND chuẩn
-  price: p.variants?.[0]?.prices?.find((pr: any) => pr.currency_code === "vnd")?.amount || 0,
-  image: p.thumbnail || "https://via.placeholder.com/150",
-  description: p.description || "",
-  // Lấy Category để Giang nhập
-  categoryName: p.categories?.[0]?.name || "Khác",
-}));
   } catch (error) {
     console.error("❌ LỖI RỒI TRÍ ƠI:", error);
     return [];
@@ -189,10 +197,6 @@ export const stationsState = atom(async () => {
   let location: Location | undefined;
   try {
     const { token } = await getLocation({});
-    // Phía tích hợp làm theo hướng dẫn tại https://mini.zalo.me/documents/api/getLocation/ để chuyển đổi token thành thông tin vị trí người dùng ở server.
-    // location = await decodeToken(token);
-
-    // Các bước bên dưới để demo chức năng, phía tích hợp có thể bỏ đi sau.
     toast(
       "Đã lấy được token chứa thông tin vị trí người dùng. Phía tích hợp cần decode token này ở server. Giả lập vị trí tại VNG Campus...",
       {
@@ -205,7 +209,6 @@ export const stationsState = atom(async () => {
       lat: 10.773756,
       lng: 106.689247,
     };
-    // End demo
   } catch (error) {
     console.warn(error);
   }
@@ -242,8 +245,6 @@ export const shippingAddressState = atomWithStorage<
 
 export const ordersState = atomFamily((status: OrderStatus) =>
   atomWithRefresh(async () => {
-    // Phía tích hợp thay đổi logic filter server-side nếu cần:
-    // const serverSideFilteredData = await requestWithFallback<Order[]>(`/orders?status=${status}`, []);
     const allMockOrders = await requestWithFallback<Order[]>("/orders", []);
     const clientSideFilteredData = allMockOrders.filter(
       (order) => order.status === status

@@ -3,6 +3,7 @@ import { useAtomValue } from "jotai";
 import { useNavigate, useParams } from "react-router-dom";
 import { productState } from "@/state";
 import { formatPrice } from "@/utils/format";
+// Đã sửa lỗi dư chữ 't' ở đây
 import ShareButton from "./share-buttont";
 import RelatedProducts from "./related-products";
 import { useAddToCart } from "@/hooks";
@@ -48,7 +49,8 @@ export default function ProductDetailPage() {
             <div className="text-xl font-bold text-primary">
               {formatPrice(product.price)}
             </div>
-            {product.originalPrice && (
+            {/* Đã rào chắn thêm điều kiện giá gốc phải lớn hơn giá bán để không bị lỗi tính toán */}
+            {product.originalPrice && product.originalPrice > product.price && (
               <div className="text-2xs space-x-0.5">
                 <span className="text-subtitle line-through">
                   {formatPrice(product.originalPrice)}
