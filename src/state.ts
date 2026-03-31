@@ -22,238 +22,144 @@ import {
 } from "@/types";
 import { requestWithFallback } from "@/utils/request";
 import {
-  getLocation,
-  getPhoneNumber,
   getSetting,
   getUserInfo,
+  getPhoneNumber,
+  getLocation,
 } from "zmp-sdk/apis";
 import toast from "react-hot-toast";
 import { calculateDistance } from "./utils/location";
 import { formatDistant } from "./utils/format";
 import CONFIG from "./config";
 
+// --- Quản lý thông tin User ---
 export const userInfoKeyState = atom(0);
-
 export const userInfoState = atom<Promise<UserInfo>>(async (get) => {
   get(userInfoKeyState);
-
   const savedUserInfo = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
-  if (savedUserInfo) {
-    return JSON.parse(savedUserInfo);
-  }
-
-  const {
-    authSetting: {
-      "scope.userInfo": grantedUserInfo,
-      "scope.userPhonenumber": grantedPhoneNumber,
-    },
-  } = await getSetting({});
+  if (savedUserInfo) return JSON.parse(savedUserInfo);
+  const { authSetting } = await getSetting({});
   const isDev = !window.ZJSBridge;
-  if (grantedUserInfo || isDev) {
+  if (authSetting?.["scope.userInfo"] || isDev) {
     const { userInfo } = await getUserInfo({});
-    const phone =
-      grantedPhoneNumber || isDev
-        ? await get(phoneState)
-        : "";
-    return {
-      id: userInfo.id,
-      name: userInfo.name,
-      avatar: userInfo.avatar,
-      phone,
-      email: "",
-      address: "",
-    };
+    const phone = authSetting?.["scope.userPhonenumber"] || isDev ? await get(phoneState) : "";
+    return { id: userInfo.id, name: userInfo.name, avatar: userInfo.avatar, phone, email: "", address: "" };
   }
 });
-
 export const loadableUserInfoState = loadable(userInfoState);
-
 export const phoneState = atom(async () => {
   let phone = "";
   try {
     const { token } = await getPhoneNumber({});
-    toast(
-      "Đã lấy được token chứa số điện thoại người dùng. Phía tích hợp cần decode token này ở server. Giả lập số điện thoại 0912345678...",
-      {
-        icon: "ℹ",
-        duration: 10000,
-      }
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((res) => setTimeout(res, 1000));
     phone = "0912345678";
-  } catch (error) {
-    console.warn(error);
-  }
+  } catch (e) { console.warn(e); }
   return phone;
 });
 
-export const bannersState = atom(() =>
-  requestWithFallback<string[]>("/banners", [])
-);
-
+// --- Giao diện chung ---
+export const bannersState = atom(() => requestWithFallback<string[]>("/banners", []));
 export const tabsState = atom(["Tất cả", "Nam", "Nữ", "Trẻ em"]);
-
 export const selectedTabIndexState = atom(0);
+export const categoriesState = atom(() => requestWithFallback<Category[]>("/categories", []));
+export const categoriesStateUpwrapped = unwrap(categoriesState, (p) => p ?? []);
 
-export const categoriesState = atom(() =>
-  requestWithFallback<Category[]>("/categories", [])
-);
-
-export const categoriesStateUpwrapped = unwrap(
-  categoriesState,
-  (prev) => prev ?? []
-);
-
+// --- 📦 LOGIC LẤY SẢN PHẨM (SỬA THEO "LONG MẠCH" MỚI) ---
 export const productsState = atom(async (get) => {
   try {
-    // Gọi API y hệt như code đang chạy được của ông
+    const MY_REGION_ID = "reg_01KN1H836G62BN9306B3P6EA68";
+    
+    // Gọi API với fields chuẩn như documentation ông tìm được
     const { products } = await medusa.products.list(
       {
-        region_id: "reg_01KN1H836G62BN9306B3P6EA68"
+        region_id: MY_REGION_ID,
+        // Ép lấy calculated_price để có giá cuối cùng
+        fields: "*variants.calculated_price", 
       }, 
       {
         "x-publishable-api-key": "pk_c4c2e2da3439360ceea472142d633c8c408ac63c99365de339faad78bc058805"
       }
     );
 
-    const MY_REGION = "reg_01KN1H836G62BN9306B3P6EA68";
-
     return products.map((p: any) => {
-      const prices = p.variants?.[0]?.prices || [];
+      const variant = p.variants?.[0];
       
-      const priceEntry = 
-        prices.find((pr: any) => pr.region_id === MY_REGION) || 
-        prices.find((pr: any) => pr.currency_code?.toLowerCase() === "vnd") ||
-        prices[0];
+      // LẤY GIÁ THẬT: Truy xuất đúng vào calculated_amount như trong hình image_3d4a80.jpg
+      const finalPrice = variant?.calculated_price?.calculated_amount || 0;
 
-      let finalPrice = priceEntry ? priceEntry.amount : 0;
-
-      // XỬ LÝ 0 ĐỒNG: Server không nhả giá, ta tự set thẳng 33500 để pass UI
-      
-
+      // KHÔNG CÒN DÙNG "BÙA" NỮA - LẤY TRỰC TIẾP TỪ SERVER
       return {
         id: String(p.id), 
         name: p.title,
-        price: finalPrice,
+        price: Number(finalPrice), // Đảm bảo là kiểu số
         image: p.thumbnail || "https://via.placeholder.com/150",
         description: p.description || "",
-        categoryId: p.categories?.[0]?.id || "other", // XỬ LÝ LỖI GẠCH ĐỎ TS
+        categoryId: p.categories?.[0]?.id || "default",
         categoryName: p.categories?.[0]?.name || "Khác",
       };
     });
-
   } catch (error) {
-    console.error("❌ LỖI RỒI TRÍ ƠI:", error);
+    console.error("❌ Lỗi gọi API Medusa:", error);
     return [];
   }
 });
 
 export const flashSaleProductsState = atom((get) => get(productsState));
-
 export const recommendedProductsState = atom((get) => get(productsState));
 
 export const productState = atomFamily((id: string) => 
   atom(async (get) => {
     const products = await get(productsState);
-    return products.find((product) => String(product.id) === String(id));
+    return products.find((p) => String(p.id) === id);
   })
 );
 
+export const productsByCategoryState = atomFamily((id: string) =>
+  atom(async (get) => {
+    const products = await get(productsState);
+    return products.filter((p) => String(p.categoryId) === id);
+  })
+);
+
+// --- Giỏ hàng & Tìm kiếm ---
 export const cartState = atom<Cart>([]);
-
 export const selectedCartItemIdsState = atom<number[]>([]);
-
 export const cartTotalState = atom((get) => {
   const items = get(cartState);
   return {
     totalItems: items.length,
-    totalAmount: items.reduce(
-      (total, item) => total + item.product.price * item.quantity,
-      0
-    ),
+    totalAmount: items.reduce((t, i) => t + (i.product?.price || 0) * i.quantity, 0),
   };
 });
 
 export const keywordState = atom("");
-
 export const searchResultState = atom(async (get) => {
-  const keyword = get(keywordState);
+  const k = get(keywordState);
   const products = await get(productsState);
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-  return products.filter((product) =>
-    product.name.toLowerCase().includes(keyword.toLowerCase())
-  );
+  return products.filter((p) => p.name.toLowerCase().includes(k.toLowerCase()));
 });
 
-export const productsByCategoryState = atomFamily((id: String) =>
-  atom(async (get) => {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const products = await get(productsState);
-    return products.filter((product) => String(product.categoryId) === id);
-  })
-);
-
+// --- Vị trí và Trạm ---
 export const stationsState = atom(async () => {
-  let location: Location | undefined;
-  try {
-    const { token } = await getLocation({});
-    toast(
-      "Đã lấy được token chứa thông tin vị trí người dùng. Phía tích hợp cần decode token này ở server. Giả lập vị trí tại VNG Campus...",
-      {
-        icon: "ℹ",
-        duration: 10000,
-      }
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    location = {
-      lat: 10.773756,
-      lng: 106.689247,
-    };
-  } catch (error) {
-    console.warn(error);
-  }
-
+  const location = { lat: 10.773756, lng: 106.689247 };
   const stations = await requestWithFallback<Station[]>("/stations", []);
-  const stationsWithDistance = stations.map((station) => ({
-    ...station,
-    distance: location
-      ? formatDistant(
-          calculateDistance(
-            location.lat,
-            location.lng,
-            station.location.lat,
-            station.location.lng
-          )
-        )
-      : undefined,
+  return stations.map((s) => ({
+    ...s,
+    distance: formatDistant(calculateDistance(location.lat, location.lng, s.location.lat, s.location.lng))
   }));
-
-  return stationsWithDistance;
 });
-
 export const selectedStationIndexState = atom(0);
-
 export const selectedStationState = atom(async (get) => {
-  const index = get(selectedStationIndexState);
-  const stations = await get(stationsState);
-  return stations[index];
+  const idx = get(selectedStationIndexState);
+  const stas = await get(stationsState);
+  return stas[idx];
 });
 
-export const shippingAddressState = atomWithStorage<
-  ShippingAddress | undefined
->(CONFIG.STORAGE_KEYS.SHIPPING_ADDRESS, undefined);
-
-export const ordersState = atomFamily((status: OrderStatus) =>
+export const shippingAddressState = atomWithStorage<ShippingAddress | undefined>(CONFIG.STORAGE_KEYS.SHIPPING_ADDRESS, undefined);
+export const ordersState = atomFamily((s: OrderStatus) =>
   atomWithRefresh(async () => {
-    const allMockOrders = await requestWithFallback<Order[]>("/orders", []);
-    const clientSideFilteredData = allMockOrders.filter(
-      (order) => order.status === status
-    );
-    return clientSideFilteredData;
+    const orders = await requestWithFallback<Order[]>("/orders", []);
+    return orders.filter((o) => o.status === s);
   })
 );
-
-export const deliveryModeState = atomWithStorage<Delivery["type"]>(
-  CONFIG.STORAGE_KEYS.DELIVERY,
-  "shipping"
-);
+export const deliveryModeState = atomWithStorage<Delivery["type"]>(CONFIG.STORAGE_KEYS.DELIVERY, "shipping");
