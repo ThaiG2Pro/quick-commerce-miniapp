@@ -10,7 +10,7 @@ export default function Category() {
       className="bg-section grid gap-x-2 gap-y-4 py-2 px-4 overflow-x-auto"
       style={{
         gridTemplateColumns: `repeat(${Math.ceil(
-          categories.length > 4 ? categories.length / 2 : categories.length
+          categories.length > 4 ? categories.length / 2 : categories.length,
         )}, minmax(70px, 1fr))`,
       }}
     >

@@ -87,7 +87,7 @@ function Delivery() {
             className={"flex justify-center items-center space-x-2 text-base font-medium bg-background rounded-full h-12 px-3.5 ".concat(
               selectedDeliveryMode === option.type
                 ? "border border-primary text-primary"
-                : ""
+                : "",
             )}
             onClick={() => setSelectedDeliveryMode(option.type)}
           >

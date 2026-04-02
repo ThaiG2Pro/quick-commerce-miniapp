@@ -1,3 +1,4 @@
+import LoginPage from "./pages/login";
 import Layout from "@/components/layout";
 import CartPage from "@/pages/cart";
 import CategoryDetailPage from "@/pages/catalog/category-detail";
@@ -109,6 +110,7 @@ const router = createBrowserRouter(
             noFloatingCart: true,
           },
         },
+        // ... (các đoạn code trên giữ nguyên)
         {
           path: "/search",
           element: <SearchPage />,
@@ -118,10 +120,20 @@ const router = createBrowserRouter(
             noFooter: true,
           },
         },
+        {
+          path: "/login",
+          element: <LoginPage />,
+          handle: {
+            title: "Đăng nhập",
+            noFooter: true, // Ẩn thanh menu dưới cùng cho đẹp
+            noFloatingCart: true, // Ẩn luôn giỏ hàng bay bay
+          },
+        },
+        // 👆 KẾT THÚC ĐOẠN THÊM 👆
       ],
     },
   ],
-  { basename: getBasePath() }
+  { basename: getBasePath() },
 );
 
 export default router;

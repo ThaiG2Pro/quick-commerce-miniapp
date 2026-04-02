@@ -15,7 +15,7 @@ export default function CartItem(props: CartItemProps) {
   const { addToCart } = useAddToCart(props.product);
 
   const [selectedItemIds, setSelectedItemIds] = useAtom(
-    selectedCartItemIdsState
+    selectedCartItemIdsState,
   );
 
   // update cart
@@ -43,7 +43,7 @@ export default function CartItem(props: CartItemProps) {
       bounds: { left: -100, right: 0, top: 0, bottom: 0 },
       rubberband: true,
       preventScroll: true,
-    }
+    },
   );
 
   return (

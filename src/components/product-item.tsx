@@ -61,7 +61,7 @@ export default function ProductItem(props: ProductItemProps) {
                     {100 -
                       Math.round(
                         (props.product.price * 100) /
-                          props.product.originalPrice
+                          props.product.originalPrice,
                       )}
                     %
                   </span>

@@ -1,7 +1,7 @@
 import { PropsWithChildren } from "react";
 
 function Badge(
-  props: PropsWithChildren<{ value: number; style?: React.CSSProperties }>
+  props: PropsWithChildren<{ value: number; style?: React.CSSProperties }>,
 ) {
   return (
     <div className="relative">

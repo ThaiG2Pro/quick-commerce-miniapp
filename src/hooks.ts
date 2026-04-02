@@ -16,7 +16,7 @@ import { useAtomCallback } from "jotai/utils";
 
 export function useRealHeight(
   element: MutableRefObject<HTMLDivElement | null>,
-  defaultValue?: number
+  defaultValue?: number,
 ) {
   const [height, setHeight] = useState(defaultValue ?? 0);
   useLayoutEffect(() => {
@@ -62,12 +62,12 @@ export function useAddToCart(product: Product) {
 
   const currentCartItem = useMemo(
     () => cart.find((item) => item.product.id === product.id),
-    [cart, product.id]
+    [cart, product.id],
   );
 
   const addToCart = (
     quantity: number | ((oldQuantity: number) => number),
-    options?: { toast: boolean }
+    options?: { toast: boolean },
   ) => {
     setCart((cart) => {
       const newQuantity =
@@ -143,7 +143,7 @@ export function useCheckout() {
     } catch (error) {
       console.warn(error);
       toast.error(
-        "Thanh toán thất bại. Vui lòng kiểm tra nội dung lỗi bên trong Console."
+        "Thanh toán thất bại. Vui lòng kiểm tra nội dung lỗi bên trong Console.",
       );
     }
   };
