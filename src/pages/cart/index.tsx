@@ -16,12 +16,13 @@ export default function CartPage() {
 
   const cart = useAtomValue(cartState);
 
-  // 2. KHI GIỎ HÀNG TRỐNG (Trường hợp ông đang gặp) -> Nhét cái nút ngay trên hình giỏ hàng trống
-  if (!cart.length) {
+  // 2. KHI GIỎ HÀNG TRỐNG (ĐÃ FIX BẢO VỆ 3 LỚP Ở ĐÂY 👇)
+  // Nếu cart là null (lỗi server) HOẶC không có items HOẶC items rỗng -> Hiện giỏ trống
+  if (!cart?.items?.length) {
     return (
       <div className="flex flex-col items-center pt-10 space-y-4 h-full">
         <Button onClick={() => navigate("/login")} variant="secondary">
-          Test thử màn hình Đăng Nhập
+          Đăng nhập tại đây
         </Button>
         <div className="w-full">
           <EmptyCart />
@@ -39,7 +40,7 @@ export default function CartPage() {
           fullWidth
           variant="secondary"
         >
-          Test thử màn hình Đăng Nhập
+          Đăng nhập tại đây
         </Button>
       </div>
 

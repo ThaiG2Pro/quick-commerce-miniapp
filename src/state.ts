@@ -26,6 +26,8 @@ import {
   getUserInfo,
   getPhoneNumber,
   getLocation,
+  getStorage, // ĐÃ GOM LÊN TRÊN CÙNG
+  setStorage, // ĐÃ GOM LÊN TRÊN CÙNG
 } from "zmp-sdk/apis";
 import toast from "react-hot-toast";
 import { calculateDistance } from "./utils/location";
@@ -80,35 +82,39 @@ export const categoriesState = atom(() =>
 );
 export const categoriesStateUpwrapped = unwrap(categoriesState, (p) => p ?? []);
 
-// --- 📦 LOGIC LẤY SẢN PHẨM (SỬA THEO "LONG MẠCH" MỚI) ---
+// --- 📦 LOGIC LẤY SẢN PHẨM (ĐÃ VƯỢT ẢI NGROK) ---
+// --- 📦 LOGIC LẤY SẢN PHẨM (ĐÃ UPDATE TỰ ĐỘNG LẤY REGION) ---
 export const productsState = atom(async (get) => {
   try {
-    const MY_REGION_ID = "reg_01KN1H836G62BN9306B3P6EA68";
+    // 1. Tự động "hỏi thăm" server xem có những Region nào
+    const { regions } = await medusa.regions.list();
+    if (!regions || regions.length === 0) {
+      console.error("❌ Server chưa cấu hình Region!");
+      return [];
+    }
+    const currentRegionId = regions[0].id; // Lấy ID đầu tiên động 100%
 
-    // Gọi API với fields chuẩn như documentation ông tìm được
+    // 2. Gọi API với Region lấy được và LỆNH BÀI
+    // Trong state.ts, chỗ productsState:
     const { products } = await medusa.products.list(
       {
-        region_id: MY_REGION_ID,
-        // Ép lấy calculated_price để có giá cuối cùng
+        region_id: currentRegionId,
         fields: "*variants.calculated_price",
       },
       {
-        "x-publishable-api-key":
-          "pk_c4c2e2da3439360ceea472142d633c8c408ac63c99365de339faad78bc058805",
-      },
+        // 2. CHỈ CẦN GIỮ LẠI LỆNH BÀI NÀY, XÓA DÒNG PUBLISHABLE KEY ĐI
+        "ngrok-skip-browser-warning": "true", 
+      }
     );
 
     return products.map((p: any) => {
       const variant = p.variants?.[0];
-
-      // LẤY GIÁ THẬT: Truy xuất đúng vào calculated_amount như trong hình image_3d4a80.jpg
       const finalPrice = variant?.calculated_price?.calculated_amount || 0;
 
-      // KHÔNG CÒN DÙNG "BÙA" NỮA - LẤY TRỰC TIẾP TỪ SERVER
       return {
         id: String(p.id),
         name: p.title,
-        price: Number(finalPrice), // Đảm bảo là kiểu số
+        price: Number(finalPrice), 
         image: p.thumbnail || "https://via.placeholder.com/150",
         description: p.description || "",
         categoryId: p.categories?.[0]?.id || "default",
@@ -116,11 +122,11 @@ export const productsState = atom(async (get) => {
       };
     });
   } catch (error) {
-    console.error("❌ Lỗi gọi API Medusa:", error);
+    console.error("❌ Lỗi gọi API lấy sản phẩm:", error);
     return [];
   }
-});
 
+});
 export const flashSaleProductsState = atom((get) => get(productsState));
 export const recommendedProductsState = atom((get) => get(productsState));
 
@@ -138,20 +144,118 @@ export const productsByCategoryState = atomFamily((id: string) =>
   }),
 );
 
-// --- Giỏ hàng & Tìm kiếm ---
-export const cartState = atom<Cart>([]);
-export const selectedCartItemIdsState = atom<number[]>([]);
+// --- 🛒 GIỎ HÀNG (Cart) ---
+
+// 1. Lưu ID giỏ hàng (Chỉ chứa ID string)
+export const cartIdState = atom<string | null>(null);
+
+// 2. Chứa toàn bộ dữ liệu giỏ hàng (Items, Total,...) từ Medusa
+export const cartState = atom<any | null>(null);
+
+// 3. Atom tính tổng số lượng món để hiện cái Badge màu đỏ
 export const cartTotalState = atom((get) => {
-  const items = get(cartState);
+  const cart = get(cartState);
+  if (!cart || !cart.items) return { totalItems: 0, totalAmount: 0 };
+  
   return {
-    totalItems: items.length,
-    totalAmount: items.reduce(
-      (t, i) => t + (i.product?.price || 0) * i.quantity,
-      0,
-    ),
+    totalItems: cart.items.reduce((total: number, item: any) => total + item.quantity, 0),
+    totalAmount: cart.total || 0,
   };
 });
 
+// ==========================================
+// CÁC HÀM XỬ LÝ GIỎ HÀNG (ACTIONS)
+// ==========================================
+
+// ==========================================
+// CÁC HÀM XỬ LÝ GIỎ HÀNG (ACTIONS)
+// ==========================================
+
+export const initializeCartAtom = atom(null, async (get, set) => {
+  try {
+    // 1. Lấy Region động trước (kiểu gì cũng cần xài)
+    const { regions } = await medusa.regions.list();
+    if (!regions || regions.length === 0) return;
+    const currentRegionId = regions[0].id;
+    
+    // 2. Đọc Zalo Storage xem có giỏ hàng cũ không
+    const { medusa_cart_id } = await getStorage({ keys: ["medusa_cart_id"] });
+
+    if (medusa_cart_id) {
+      try {
+        // Có giỏ cũ -> Cố gắng lấy data từ Medusa
+        const { cart } = await medusa.carts.retrieve(medusa_cart_id);
+        set(cartIdState, cart.id);
+        set(cartState, cart);
+        return; // Thành công thì thoát hàm
+      } catch (retrieveError) {
+        // BƯỚC PHÒNG NGỰ CỰC GẮT LÀ ĐÂY!
+        // Nếu server bị reset (như Onrender nãy giờ), mã giỏ cũ sẽ chết.
+        // Bắt lỗi 400 ở đây, không cho app sập, tự động bỏ qua để tạo giỏ mới!
+        console.warn("⚠️ Giỏ hàng cũ đã bốc hơi khỏi server, tiến hành dọn rác và tạo mới...");
+        await setStorage({ data: { medusa_cart_id: "" } }); 
+      }
+    } 
+    
+    // 3. Khách mới (hoặc giỏ cũ bị lỗi 400) -> Tạo giỏ hàng mới tinh theo Region động
+    const { cart } = await medusa.carts.create({ region_id: currentRegionId });
+    
+    // LƯU VÀO ZALO STORAGE
+    await setStorage({ data: { medusa_cart_id: cart.id } });
+    
+    set(cartIdState, cart.id);
+    set(cartState, cart);
+    
+  } catch (error) {
+    console.error("❌ Lỗi khởi tạo giỏ hàng:", error);
+  }
+});
+
+// Hàm Thêm sản phẩm
+export const addToCartAtom = atom(null, async (get, set, payload: { variantId: string, quantity: number }) => {
+  const cartId = get(cartIdState);
+  if (!cartId) return;
+
+  try {
+    const { cart } = await medusa.carts.lineItems.create(cartId, {
+      variant_id: payload.variantId,
+      quantity: payload.quantity,
+    });
+    set(cartState, cart); 
+  } catch (error) {
+    console.error("Lỗi thêm vào giỏ:", error);
+  }
+});
+
+// Hàm Cập nhật số lượng (+ / -)
+export const updateCartItemAtom = atom(null, async (get, set, payload: { lineId: string, quantity: number }) => {
+  const cartId = get(cartIdState);
+  if (!cartId) return;
+
+  try {
+    const { cart } = await medusa.carts.lineItems.update(cartId, payload.lineId, {
+      quantity: payload.quantity,
+    });
+    set(cartState, cart);
+  } catch (error) {
+    console.error("Lỗi update giỏ:", error);
+  }
+});
+
+// Hàm Xóa món
+export const removeCartItemAtom = atom(null, async (get, set, lineId: string) => {
+  const cartId = get(cartIdState);
+  if (!cartId) return;
+
+  try {
+    const { cart } = await medusa.carts.lineItems.delete(cartId, lineId);
+    set(cartState, cart);
+  } catch (error) {
+    console.error("Lỗi xóa món:", error);
+  }
+});
+
+// --- Tìm kiếm ---
 export const keywordState = atom("");
 export const searchResultState = atom(async (get) => {
   const k = get(keywordState);
@@ -185,12 +289,14 @@ export const selectedStationState = atom(async (get) => {
 export const shippingAddressState = atomWithStorage<
   ShippingAddress | undefined
 >(CONFIG.STORAGE_KEYS.SHIPPING_ADDRESS, undefined);
+
 export const ordersState = atomFamily((s: OrderStatus) =>
   atomWithRefresh(async () => {
     const orders = await requestWithFallback<Order[]>("/orders", []);
     return orders.filter((o) => o.status === s);
   }),
 );
+
 export const deliveryModeState = atomWithStorage<Delivery["type"]>(
   CONFIG.STORAGE_KEYS.DELIVERY,
   "shipping",

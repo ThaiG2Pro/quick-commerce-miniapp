@@ -80,7 +80,7 @@ export const LoginPage = () => {
 
     } catch (error) {
       console.error("Lỗi Login:", error);
-      openSnackbar({ text: "Lỗi kết nối, thử lại sau nhé Trí!", type: "error" });
+      openSnackbar({ text: "Lỗi kết nối, thử lại sau nhé!", type: "error" });
     } finally {
       setIsLoading(false);
     }

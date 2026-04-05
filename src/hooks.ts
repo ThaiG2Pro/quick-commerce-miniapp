@@ -1,4 +1,4 @@
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { MutableRefObject, useLayoutEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { UIMatch, useMatches, useNavigate } from "react-router-dom";
@@ -8,6 +8,10 @@ import {
   ordersState,
   userInfoKeyState,
   userInfoState,
+  // 1. IMPORT THÊM 3 HÀM XỬ LÝ MEDUSA CART Ở ĐÂY 👇
+  addToCartAtom,
+  updateCartItemAtom,
+  removeCartItemAtom,
 } from "@/state";
 import { Product } from "@/types";
 import { getConfig } from "@/utils/template";
@@ -57,39 +61,49 @@ export function useRequestInformation() {
   };
 }
 
+// 2. REFATOR LẠI HÀM NÀY ĐỂ ĂN KHỚP VỚI OBJECT MEDUSA 👇
 export function useAddToCart(product: Product) {
-  const [cart, setCart] = useAtom(cartState);
+  // Đọc giỏ hàng từ Medusa
+  const cart = useAtomValue(cartState);
+  
+  // Lấy 3 vũ khí gọi API Medusa
+  const add = useSetAtom(addToCartAtom);
+  const update = useSetAtom(updateCartItemAtom);
+  const remove = useSetAtom(removeCartItemAtom);
 
+  // Tìm món ăn trong danh sách cart?.items thay vì cart thẳng
   const currentCartItem = useMemo(
-    () => cart.find((item) => item.product.id === product.id),
-    [cart, product.id],
+    () => cart?.items?.find((item: any) => item.title === product.name || item.variant?.product_id === product.id),
+    [cart, product.id, product.name],
   );
 
-  const addToCart = (
+  const addToCart = async (
     quantity: number | ((oldQuantity: number) => number),
     options?: { toast: boolean },
   ) => {
-    setCart((cart) => {
-      const newQuantity =
-        typeof quantity === "function"
-          ? quantity(currentCartItem?.quantity ?? 0)
-          : quantity;
+    const oldQuantity = currentCartItem?.quantity ?? 0;
+    const newQuantity = typeof quantity === "function" ? quantity(oldQuantity) : quantity;
+
+    try {
       if (newQuantity <= 0) {
-        cart.splice(cart.indexOf(currentCartItem!), 1);
+        // Nếu số lượng về 0 -> Gọi API xóa món
+        if (currentCartItem) await remove(currentCartItem.id);
       } else {
         if (currentCartItem) {
-          currentCartItem.quantity = newQuantity;
+          // Nếu món đã có -> Gọi API update số lượng
+          await update({ lineId: currentCartItem.id, quantity: newQuantity });
         } else {
-          cart.push({
-            product,
-            quantity: newQuantity,
-          });
+          // Nếu món mới -> Gọi API thêm vào giỏ (Tạm truyền product.id làm variantId)
+          await add({ variantId: product.id, quantity: newQuantity });
         }
       }
-      return [...cart];
-    });
-    if (options?.toast) {
-      toast.success("Đã thêm vào giỏ hàng");
+
+      if (options?.toast) {
+        toast.success("Đã cập nhật giỏ hàng");
+      }
+    } catch (error) {
+      toast.error("Có lỗi khi cập nhật giỏ hàng!");
+      console.error(error);
     }
   };
 
@@ -111,9 +125,10 @@ export function useToBeImplemented() {
     });
 }
 
+// 3. FIX LẠI LỖI TRẮNG MÀN HÌNH LÚC THANH TOÁN 👇
 export function useCheckout() {
   const { totalAmount } = useAtomValue(cartTotalState);
-  const [cart, setCart] = useAtom(cartState);
+  const cart = useAtomValue(cartState); 
   const requestInfo = useRequestInformation();
   const navigate = useNavigate();
   const refreshNewOrders = useSetAtom(ordersState("pending"));
@@ -124,14 +139,14 @@ export function useCheckout() {
       await createOrder({
         amount: totalAmount,
         desc: "Thanh toán đơn hàng",
-        item: cart.map((item) => ({
-          id: item.product.id,
-          name: item.product.name,
-          price: item.product.price,
+        // Chọc vào cart?.items?.map thay vì cart.map
+        item: cart?.items?.map((item: any) => ({
+          id: item.id,
+          name: item.title,
+          price: item.unit_price,
           quantity: item.quantity,
-        })),
+        })) || [],
       });
-      setCart([]);
       refreshNewOrders();
       navigate("/orders", {
         viewTransition: true,
