@@ -8,7 +8,6 @@ import {
   ordersState,
   userInfoKeyState,
   userInfoState,
-  // 1. IMPORT THÊM 3 HÀM XỬ LÝ MEDUSA CART Ở ĐÂY 👇
   addToCartAtom,
   updateCartItemAtom,
   removeCartItemAtom,
@@ -61,17 +60,13 @@ export function useRequestInformation() {
   };
 }
 
-// 2. REFATOR LẠI HÀM NÀY ĐỂ ĂN KHỚP VỚI OBJECT MEDUSA 👇
 export function useAddToCart(product: Product) {
-  // Đọc giỏ hàng từ Medusa
   const cart = useAtomValue(cartState);
   
-  // Lấy 3 vũ khí gọi API Medusa
   const add = useSetAtom(addToCartAtom);
   const update = useSetAtom(updateCartItemAtom);
   const remove = useSetAtom(removeCartItemAtom);
 
-  // Tìm món ăn trong danh sách cart?.items thay vì cart thẳng
   const currentCartItem = useMemo(
     () => cart?.items?.find((item: any) => item.title === product.name || item.variant?.product_id === product.id),
     [cart, product.id, product.name],
@@ -86,15 +81,13 @@ export function useAddToCart(product: Product) {
 
     try {
       if (newQuantity <= 0) {
-        // Nếu số lượng về 0 -> Gọi API xóa món
         if (currentCartItem) await remove(currentCartItem.id);
       } else {
         if (currentCartItem) {
-          // Nếu món đã có -> Gọi API update số lượng
           await update({ lineId: currentCartItem.id, quantity: newQuantity });
         } else {
-          // Nếu món mới -> Gọi API thêm vào giỏ (Tạm truyền product.id làm variantId)
-          await add({ variantId: product.id, quantity: newQuantity });
+          // FIX TRỌNG TÂM LÀ Ở ĐÂY 👇
+          await add({ variantId: (product as any).variantId, quantity: newQuantity });
         }
       }
 
@@ -125,7 +118,6 @@ export function useToBeImplemented() {
     });
 }
 
-// 3. FIX LẠI LỖI TRẮNG MÀN HÌNH LÚC THANH TOÁN 👇
 export function useCheckout() {
   const { totalAmount } = useAtomValue(cartTotalState);
   const cart = useAtomValue(cartState); 
@@ -139,7 +131,6 @@ export function useCheckout() {
       await createOrder({
         amount: totalAmount,
         desc: "Thanh toán đơn hàng",
-        // Chọc vào cart?.items?.map thay vì cart.map
         item: cart?.items?.map((item: any) => ({
           id: item.id,
           name: item.title,

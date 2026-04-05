@@ -84,6 +84,7 @@ export const categoriesStateUpwrapped = unwrap(categoriesState, (p) => p ?? []);
 
 // --- 📦 LOGIC LẤY SẢN PHẨM (ĐÃ VƯỢT ẢI NGROK) ---
 // --- 📦 LOGIC LẤY SẢN PHẨM (ĐÃ UPDATE TỰ ĐỘNG LẤY REGION) ---
+// --- 📦 LOGIC LẤY SẢN PHẨM (ĐÃ UPDATE TỰ ĐỘNG LẤY REGION & SỬA LỖI VARIANT_ID) ---
 export const productsState = atom(async (get) => {
   try {
     // 1. Tự động "hỏi thăm" server xem có những Region nào
@@ -95,14 +96,12 @@ export const productsState = atom(async (get) => {
     const currentRegionId = regions[0].id; // Lấy ID đầu tiên động 100%
 
     // 2. Gọi API với Region lấy được và LỆNH BÀI
-    // Trong state.ts, chỗ productsState:
     const { products } = await medusa.products.list(
       {
         region_id: currentRegionId,
         fields: "*variants.calculated_price",
       },
       {
-        // 2. CHỈ CẦN GIỮ LẠI LỆNH BÀI NÀY, XÓA DÒNG PUBLISHABLE KEY ĐI
         "ngrok-skip-browser-warning": "true", 
       }
     );
@@ -113,6 +112,7 @@ export const productsState = atom(async (get) => {
 
       return {
         id: String(p.id),
+        variantId: String(variant?.id), // 👉 ĐÂY LÀ DÒNG CHÍ MẠNG QUYẾT ĐỊNH GIỎ HÀNG SỐNG HAY CHẾT NÈ
         name: p.title,
         price: Number(finalPrice), 
         image: p.thumbnail || "https://via.placeholder.com/150",
@@ -125,7 +125,6 @@ export const productsState = atom(async (get) => {
     console.error("❌ Lỗi gọi API lấy sản phẩm:", error);
     return [];
   }
-
 });
 export const flashSaleProductsState = atom((get) => get(productsState));
 export const recommendedProductsState = atom((get) => get(productsState));
