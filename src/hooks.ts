@@ -1,8 +1,11 @@
-import { useAtomValue, useSetAtom } from "jotai";
+// @ts-ignore
+import medusa from "./medusa-client";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { MutableRefObject, useLayoutEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { UIMatch, useMatches, useNavigate } from "react-router-dom";
 import {
+  cartIdState, // Đã thêm để lấy ID giỏ hàng
   cartState,
   cartTotalState,
   ordersState,
@@ -14,7 +17,7 @@ import {
 } from "@/state";
 import { Product } from "@/types";
 import { getConfig } from "@/utils/template";
-import { authorize, createOrder, openChat } from "zmp-sdk/apis";
+import { authorize, openChat, setStorage } from "zmp-sdk/apis"; // Thêm setStorage để dọn giỏ hàng
 import { useAtomCallback } from "jotai/utils";
 
 export function useRealHeight(
@@ -86,7 +89,6 @@ export function useAddToCart(product: Product) {
         if (currentCartItem) {
           await update({ lineId: currentCartItem.id, quantity: newQuantity });
         } else {
-          // FIX TRỌNG TÂM LÀ Ở ĐÂY 👇
           await add({ variantId: (product as any).variantId, quantity: newQuantity });
         }
       }
@@ -118,39 +120,73 @@ export function useToBeImplemented() {
     });
 }
 
+// 🚀 HÀM CHECKOUT "ĐÁNH NHANH THẮNG NHANH" DÀNH CHO DEMO ĐỒ ÁN
+// 🚀 HÀM CHECKOUT ĐÃ BỔ SUNG PHÍ SHIP
 export function useCheckout() {
-  const { totalAmount } = useAtomValue(cartTotalState);
-  const cart = useAtomValue(cartState); 
+  const cartId = useAtomValue(cartIdState);
+  const [cart, setCart] = useAtom(cartState); 
   const requestInfo = useRequestInformation();
   const navigate = useNavigate();
   const refreshNewOrders = useSetAtom(ordersState("pending"));
 
   return async () => {
+    if (!cartId) {
+      toast.error("Giỏ hàng đang trống!");
+      return;
+    }
+
+    const toastId = toast.loading("Đang chốt đơn, chờ xíu nha...");
+
     try {
       await requestInfo();
-      await createOrder({
-        amount: totalAmount,
-        desc: "Thanh toán đơn hàng",
-        item: cart?.items?.map((item: any) => ({
-          id: item.id,
-          name: item.title,
-          price: item.unit_price,
-          quantity: item.quantity,
-        })) || [],
+
+      // BƯỚC 1: Ép thẳng địa chỉ UIT vào cho lẹ
+      await medusa.carts.update(cartId, {
+        email: "khachhang@uit.edu.vn",
+        shipping_address: {
+          first_name: "Thanh Trí",
+          last_name: "Nguyễn",
+          address_1: "Đại học CNTT UIT, Khu phố 6, Linh Trung, Thủ Đức",
+          city: "Hồ Chí Minh",
+          country_code: "vn",
+          phone: "0912345678"
+        }
       });
-      refreshNewOrders();
-      navigate("/orders", {
-        viewTransition: true,
+
+      // BƯỚC 1.5: ÉP PHƯƠNG THỨC VẬN CHUYỂN (MEDUSA BẮT BUỘC) 👇👇👇
+      // BƯỚC 1.5: ÉP PHƯƠNG THỨC VẬN CHUYỂN (MEDUSA BẮT BUỘC) 👇👇👇
+      const { shipping_options } = await medusa.shippingOptions.listCartOptions(cartId);
+      if (shipping_options && shipping_options.length > 0) {
+        // Tự động lấy cái phí ship đầu tiên gắn vào giỏ hàng
+        await medusa.carts.addShippingMethod(cartId, {
+          option_id: shipping_options[0].id as string, // 👉 THÊM "as string" VÀO ĐÂY LÀ HẾT ĐỎ
+        });
+      } else {
+        toast.error("Backend chưa tạo Phí Vận Chuyển. Kêu Giang tạo lẹ!", { id: toastId });
+        return; 
+      }
+      // BƯỚC 2: Khởi tạo phiên thanh toán & Ép xài Manual (Tiền mặt/COD)
+      await medusa.carts.createPaymentSessions(cartId);
+      await medusa.carts.setPaymentSession(cartId, {
+        provider_id: "manual"
       });
-      toast.success("Thanh toán thành công. Cảm ơn bạn đã mua hàng!", {
-        icon: "🎉",
-        duration: 5000,
-      });
+
+      // BƯỚC 3: CHỐT ĐƠN! 
+      const { type } = await medusa.carts.complete(cartId);
+
+      if (type === "order") {
+        setCart(null);
+        await setStorage({ data: { medusa_cart_id: "" } }); 
+        refreshNewOrders();
+        toast.success("Chốt đơn thành công! Cảm ơn bạn.", { id: toastId });
+        navigate("/orders", { viewTransition: true });
+      } else {
+        toast.error("Thanh toán chưa hoàn tất, vui lòng thử lại.", { id: toastId });
+      }
+
     } catch (error) {
-      console.warn(error);
-      toast.error(
-        "Thanh toán thất bại. Vui lòng kiểm tra nội dung lỗi bên trong Console.",
-      );
+      console.error("Lỗi khi Checkout Medusa:", error);
+      toast.error("Thanh toán thất bại. Kiểm tra lại Console!", { id: toastId });
     }
   };
 }
