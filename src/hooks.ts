@@ -123,29 +123,31 @@ export function useToBeImplemented() {
 }
 
 // 🚀 HÀM CHECKOUT HOÀN CHỈNH CHO ZALOPAY
+// 🚀 HÀM CHECKOUT CHUẨN LUỒNG E-COMMERCE
 export function useCheckout() {
   const cartId = useAtomValue(cartIdState);
   const [cart, setCart] = useAtom(cartState);
   
   const setShowQR = useSetAtom(showQRState); 
-  const setZaloPayQR = useSetAtom(zaloPayQRStringState); // 👉 Khai báo hàm để lưu chuỗi QR
+  const setZaloPayQR = useSetAtom(zaloPayQRStringState); 
   
   const requestInfo = useRequestInformation();
   const navigate = useNavigate();
   const refreshNewOrders = useSetAtom(ordersState("pending"));
 
-  return async () => {
+  // 👉 Thêm tham số paymentMethod để biết khách chọn gì
+  return async (paymentMethod: "manual" | "zalopay") => {
     if (!cartId) {
       toast.error("Giỏ hàng đang trống!");
       return;
     }
 
-    const toastId = toast.loading("Đang chốt đơn, chờ xíu nha...");
+    const toastId = toast.loading("Đang xử lý đơn hàng...");
 
     try {
       await requestInfo();
 
-      // BƯỚC 1: Cập nhật địa chỉ
+      // BƯỚC 1: Cập nhật địa chỉ (Hiện tại vẫn hardcode cho lẹ, sau này ông map với form sau)
       await medusa.carts.update(cartId, {
         email: "khachhang@uit.edu.vn",
         shipping_address: {
@@ -165,41 +167,42 @@ export function useCheckout() {
           option_id: shipping_options[0].id as string, 
         });
       } else {
-        toast.error("Backend chưa tạo Phí Vận Chuyển. Kêu Giang tạo lẹ!", { id: toastId });
+        toast.error("Backend chưa tạo Phí Vận Chuyển!", { id: toastId });
         return; 
       }
       
-      // BƯỚC 2: Set Provider là ZaloPay
+      // BƯỚC 2: Set Provider linh hoạt dựa theo khách chọn
       await medusa.carts.createPaymentSessions(cartId);
       await medusa.carts.setPaymentSession(cartId, {
-        provider_id: "zalopay"
+        provider_id: paymentMethod // 👉 Truyền biến vào đây
       });
 
-      // BƯỚC 3: CHỐT ĐƠN VÀ LẤY CHUỖI QR TỪ BACKEND
+      // BƯỚC 3: CHỐT ĐƠN 
       const { type, data } = await medusa.carts.complete(cartId);
 
       if (type === "order") {
-        
-        // 👉 Hứng chuỗi QR từ data backend trả về (Lưu ý: Tùy cấu trúc trả về của ông Giang)
-        // Nếu Giang trả về data.payment_session.data.qr_code (ví dụ vậy)
-        // Ở đây tui demo lưu cứng mã để ông test giao diện trước, chừng nào test API thật thì đổi lại
-        const maQRGiaLap = "00020101021226530010vn.zalopay01061800050203001031817718612500414873838620010A00000072701320006970454011899ZP26096O025982170208QRIBFTTA5204739953037045405110005802VN630456DA";
-        
-        setZaloPayQR(maQRGiaLap); // Lưu mã QR vào State
-        
         setCart(null);
         await setStorage({ data: { medusa_cart_id: "" } }); 
         refreshNewOrders();
-        toast.success("Chốt đơn thành công! Quét mã nhé.", { id: toastId });
         
-        setShowQR(true); // Bật Popup QR
+        if (paymentMethod === "zalopay") {
+          // 👉 NẾU LÀ ZALOPAY: Bật mã QR
+          const maQRGiaLap = "00020101021226530010vn.zalopay01061800050203001031817718612500414873838620010A00000072701320006970454011899ZP26096O025982170208QRIBFTTA5204739953037045405110005802VN630456DA";
+          setZaloPayQR(maQRGiaLap); 
+          toast.success("Tạo đơn thành công! Quét mã nhé.", { id: toastId });
+          setShowQR(true); 
+        } else {
+          // 👉 NẾU LÀ TIỀN MẶT: Báo thành công và bay thẳng qua trang Đơn hàng
+          toast.success("Đặt hàng thành công!", { id: toastId });
+          navigate("/orders", { viewTransition: true });
+        }
       } else {
-        toast.error("Thanh toán chưa hoàn tất, vui lòng thử lại.", { id: toastId });
+        toast.error("Thanh toán chưa hoàn tất.", { id: toastId });
       }
 
     } catch (error) {
       console.error("Lỗi khi Checkout Medusa:", error);
-      toast.error("Thanh toán thất bại. Kiểm tra lại Console!", { id: toastId });
+      toast.error("Thanh toán thất bại!", { id: toastId });
     }
   };
 }

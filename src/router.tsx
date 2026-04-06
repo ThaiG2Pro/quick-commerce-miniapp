@@ -1,3 +1,4 @@
+import CheckoutPage from "@/pages/checkout"; 
 import LoginPage from "./pages/login";
 import Layout from "@/components/layout";
 import CartPage from "@/pages/cart";
@@ -120,17 +121,26 @@ const router = createBrowserRouter(
             noFooter: true,
           },
         },
+       // ... (code cũ của ông)
         {
           path: "/login",
           element: <LoginPage />,
           handle: {
             title: "Đăng nhập",
-            noFooter: true, // Ẩn thanh menu dưới cùng cho đẹp
-            noFloatingCart: true, // Ẩn luôn giỏ hàng bay bay
+            noFooter: true, 
+            noFloatingCart: true, 
           },
         },
-        // 👆 KẾT THÚC ĐOẠN THÊM 👆
-      ],
+        {
+          path: "/checkout",
+          element: <CheckoutPage />,
+          handle: {
+            title: "Xác nhận đơn hàng", // Đổi title trên Header
+            noFooter: true,             // Ẩn menu dưới để tập trung chốt đơn
+            noFloatingCart: true,       // Ẩn giỏ hàng bay
+          },
+        },
+      ], // 👈 Đảm bảo nó nằm trước dấu đóng mảng này
     },
   ],
   { basename: getBasePath() },
