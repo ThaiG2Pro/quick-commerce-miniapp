@@ -300,3 +300,9 @@ export const deliveryModeState = atomWithStorage<Delivery["type"]>(
   CONFIG.STORAGE_KEYS.DELIVERY,
   "shipping",
 );
+// --- TRẠNG THÁI HIỂN THỊ MÃ QR TRANH TOÁN ---
+// Nút bật/tắt bảng QR
+export const showQRState = atom(false); 
+
+// Biến để hứng cái chuỗi ZaloPay siêu dài từ ông Giang gửi về
+export const zaloPayQRStringState = atom("");

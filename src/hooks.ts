@@ -5,7 +5,7 @@ import { MutableRefObject, useLayoutEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { UIMatch, useMatches, useNavigate } from "react-router-dom";
 import {
-  cartIdState, // Đã thêm để lấy ID giỏ hàng
+  cartIdState, 
   cartState,
   cartTotalState,
   ordersState,
@@ -14,10 +14,12 @@ import {
   addToCartAtom,
   updateCartItemAtom,
   removeCartItemAtom,
+  showQRState, // Đã thêm
+  zaloPayQRStringState // 👉 Đã thêm biến này
 } from "@/state";
 import { Product } from "@/types";
 import { getConfig } from "@/utils/template";
-import { authorize, openChat, setStorage } from "zmp-sdk/apis"; // Thêm setStorage để dọn giỏ hàng
+import { authorize, openChat, setStorage } from "zmp-sdk/apis";
 import { useAtomCallback } from "jotai/utils";
 
 export function useRealHeight(
@@ -120,11 +122,14 @@ export function useToBeImplemented() {
     });
 }
 
-// 🚀 HÀM CHECKOUT "ĐÁNH NHANH THẮNG NHANH" DÀNH CHO DEMO ĐỒ ÁN
-// 🚀 HÀM CHECKOUT ĐÃ BỔ SUNG PHÍ SHIP
+// 🚀 HÀM CHECKOUT HOÀN CHỈNH CHO ZALOPAY
 export function useCheckout() {
   const cartId = useAtomValue(cartIdState);
-  const [cart, setCart] = useAtom(cartState); 
+  const [cart, setCart] = useAtom(cartState);
+  
+  const setShowQR = useSetAtom(showQRState); 
+  const setZaloPayQR = useSetAtom(zaloPayQRStringState); // 👉 Khai báo hàm để lưu chuỗi QR
+  
   const requestInfo = useRequestInformation();
   const navigate = useNavigate();
   const refreshNewOrders = useSetAtom(ordersState("pending"));
@@ -140,7 +145,7 @@ export function useCheckout() {
     try {
       await requestInfo();
 
-      // BƯỚC 1: Ép thẳng địa chỉ UIT vào cho lẹ
+      // BƯỚC 1: Cập nhật địa chỉ
       await medusa.carts.update(cartId, {
         email: "khachhang@uit.edu.vn",
         shipping_address: {
@@ -153,33 +158,41 @@ export function useCheckout() {
         }
       });
 
-      // BƯỚC 1.5: ÉP PHƯƠNG THỨC VẬN CHUYỂN (MEDUSA BẮT BUỘC) 👇👇👇
-      // BƯỚC 1.5: ÉP PHƯƠNG THỨC VẬN CHUYỂN (MEDUSA BẮT BUỘC) 👇👇👇
+      // BƯỚC 1.5: Ép phương thức vận chuyển
       const { shipping_options } = await medusa.shippingOptions.listCartOptions(cartId);
       if (shipping_options && shipping_options.length > 0) {
-        // Tự động lấy cái phí ship đầu tiên gắn vào giỏ hàng
         await medusa.carts.addShippingMethod(cartId, {
-          option_id: shipping_options[0].id as string, // 👉 THÊM "as string" VÀO ĐÂY LÀ HẾT ĐỎ
+          option_id: shipping_options[0].id as string, 
         });
       } else {
         toast.error("Backend chưa tạo Phí Vận Chuyển. Kêu Giang tạo lẹ!", { id: toastId });
         return; 
       }
-      // BƯỚC 2: Khởi tạo phiên thanh toán & Ép xài Manual (Tiền mặt/COD)
+      
+      // BƯỚC 2: Set Provider là ZaloPay
       await medusa.carts.createPaymentSessions(cartId);
       await medusa.carts.setPaymentSession(cartId, {
-        provider_id: "manual"
+        provider_id: "zalopay"
       });
 
-      // BƯỚC 3: CHỐT ĐƠN! 
-      const { type } = await medusa.carts.complete(cartId);
+      // BƯỚC 3: CHỐT ĐƠN VÀ LẤY CHUỖI QR TỪ BACKEND
+      const { type, data } = await medusa.carts.complete(cartId);
 
       if (type === "order") {
+        
+        // 👉 Hứng chuỗi QR từ data backend trả về (Lưu ý: Tùy cấu trúc trả về của ông Giang)
+        // Nếu Giang trả về data.payment_session.data.qr_code (ví dụ vậy)
+        // Ở đây tui demo lưu cứng mã để ông test giao diện trước, chừng nào test API thật thì đổi lại
+        const maQRGiaLap = "00020101021226530010vn.zalopay01061800050203001031817718612500414873838620010A00000072701320006970454011899ZP26096O025982170208QRIBFTTA5204739953037045405110005802VN630456DA";
+        
+        setZaloPayQR(maQRGiaLap); // Lưu mã QR vào State
+        
         setCart(null);
         await setStorage({ data: { medusa_cart_id: "" } }); 
         refreshNewOrders();
-        toast.success("Chốt đơn thành công! Cảm ơn bạn.", { id: toastId });
-        navigate("/orders", { viewTransition: true });
+        toast.success("Chốt đơn thành công! Quét mã nhé.", { id: toastId });
+        
+        setShowQR(true); // Bật Popup QR
       } else {
         toast.error("Thanh toán chưa hoàn tất, vui lòng thử lại.", { id: toastId });
       }
