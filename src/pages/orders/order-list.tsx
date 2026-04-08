@@ -8,7 +8,7 @@ import { OrderSummarySkeleton } from "@/components/skeleton";
 
 function OrderList(props: { ordersState: Atom<Promise<Order[]>> }) {
   const orderList = useAtomValue(
-    useMemo(() => loadable(props.ordersState), [props.ordersState])
+    useMemo(() => loadable(props.ordersState), [props.ordersState]),
   );
 
   if (orderList.state === "hasData" && orderList.data.length === 0) {

@@ -1,22 +1,30 @@
+// @ts-ignore
+import medusa from "./medusa-client";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { MutableRefObject, useLayoutEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { UIMatch, useMatches, useNavigate } from "react-router-dom";
 import {
+  cartIdState, 
   cartState,
   cartTotalState,
   ordersState,
   userInfoKeyState,
   userInfoState,
+  addToCartAtom,
+  updateCartItemAtom,
+  removeCartItemAtom,
+  showQRState, // Đã thêm
+  zaloPayQRStringState // 👉 Đã thêm biến này
 } from "@/state";
 import { Product } from "@/types";
 import { getConfig } from "@/utils/template";
-import { authorize, createOrder, openChat } from "zmp-sdk/apis";
+import { authorize, openChat, setStorage } from "zmp-sdk/apis";
 import { useAtomCallback } from "jotai/utils";
 
 export function useRealHeight(
   element: MutableRefObject<HTMLDivElement | null>,
-  defaultValue?: number
+  defaultValue?: number,
 ) {
   const [height, setHeight] = useState(defaultValue ?? 0);
   useLayoutEffect(() => {
@@ -58,38 +66,41 @@ export function useRequestInformation() {
 }
 
 export function useAddToCart(product: Product) {
-  const [cart, setCart] = useAtom(cartState);
+  const cart = useAtomValue(cartState);
+  
+  const add = useSetAtom(addToCartAtom);
+  const update = useSetAtom(updateCartItemAtom);
+  const remove = useSetAtom(removeCartItemAtom);
 
   const currentCartItem = useMemo(
-    () => cart.find((item) => item.product.id === product.id),
-    [cart, product.id]
+    () => cart?.items?.find((item: any) => item.title === product.name || item.variant?.product_id === product.id),
+    [cart, product.id, product.name],
   );
 
-  const addToCart = (
+  const addToCart = async (
     quantity: number | ((oldQuantity: number) => number),
-    options?: { toast: boolean }
+    options?: { toast: boolean },
   ) => {
-    setCart((cart) => {
-      const newQuantity =
-        typeof quantity === "function"
-          ? quantity(currentCartItem?.quantity ?? 0)
-          : quantity;
+    const oldQuantity = currentCartItem?.quantity ?? 0;
+    const newQuantity = typeof quantity === "function" ? quantity(oldQuantity) : quantity;
+
+    try {
       if (newQuantity <= 0) {
-        cart.splice(cart.indexOf(currentCartItem!), 1);
+        if (currentCartItem) await remove(currentCartItem.id);
       } else {
         if (currentCartItem) {
-          currentCartItem.quantity = newQuantity;
+          await update({ lineId: currentCartItem.id, quantity: newQuantity });
         } else {
-          cart.push({
-            product,
-            quantity: newQuantity,
-          });
+          await add({ variantId: (product as any).variantId, quantity: newQuantity });
         }
       }
-      return [...cart];
-    });
-    if (options?.toast) {
-      toast.success("Đã thêm vào giỏ hàng");
+
+      if (options?.toast) {
+        toast.success("Đã cập nhật giỏ hàng");
+      }
+    } catch (error) {
+      toast.error("Có lỗi khi cập nhật giỏ hàng!");
+      console.error(error);
     }
   };
 
@@ -111,40 +122,87 @@ export function useToBeImplemented() {
     });
 }
 
+// 🚀 HÀM CHECKOUT HOÀN CHỈNH CHO ZALOPAY
+// 🚀 HÀM CHECKOUT CHUẨN LUỒNG E-COMMERCE
 export function useCheckout() {
-  const { totalAmount } = useAtomValue(cartTotalState);
+  const cartId = useAtomValue(cartIdState);
   const [cart, setCart] = useAtom(cartState);
+  
+  const setShowQR = useSetAtom(showQRState); 
+  const setZaloPayQR = useSetAtom(zaloPayQRStringState); 
+  
   const requestInfo = useRequestInformation();
   const navigate = useNavigate();
   const refreshNewOrders = useSetAtom(ordersState("pending"));
 
-  return async () => {
+  // 👉 Thêm tham số paymentMethod để biết khách chọn gì
+  return async (paymentMethod: "manual" | "zalopay") => {
+    if (!cartId) {
+      toast.error("Giỏ hàng đang trống!");
+      return;
+    }
+
+    const toastId = toast.loading("Đang xử lý đơn hàng...");
+
     try {
       await requestInfo();
-      await createOrder({
-        amount: totalAmount,
-        desc: "Thanh toán đơn hàng",
-        item: cart.map((item) => ({
-          id: item.product.id,
-          name: item.product.name,
-          price: item.product.price,
-          quantity: item.quantity,
-        })),
+
+      // BƯỚC 1: Cập nhật địa chỉ (Hiện tại vẫn hardcode cho lẹ, sau này ông map với form sau)
+      await medusa.carts.update(cartId, {
+        email: "khachhang@uit.edu.vn",
+        shipping_address: {
+          first_name: "Thanh Trí",
+          last_name: "Nguyễn",
+          address_1: "Đại học CNTT UIT, Khu phố 6, Linh Trung, Thủ Đức",
+          city: "Hồ Chí Minh",
+          country_code: "vn",
+          phone: "0912345678"
+        }
       });
-      setCart([]);
-      refreshNewOrders();
-      navigate("/orders", {
-        viewTransition: true,
+
+      // BƯỚC 1.5: Ép phương thức vận chuyển
+      const { shipping_options } = await medusa.shippingOptions.listCartOptions(cartId);
+      if (shipping_options && shipping_options.length > 0) {
+        await medusa.carts.addShippingMethod(cartId, {
+          option_id: shipping_options[0].id as string, 
+        });
+      } else {
+        toast.error("Backend chưa tạo Phí Vận Chuyển!", { id: toastId });
+        return; 
+      }
+      
+      // BƯỚC 2: Set Provider linh hoạt dựa theo khách chọn
+      await medusa.carts.createPaymentSessions(cartId);
+      await medusa.carts.setPaymentSession(cartId, {
+        provider_id: paymentMethod // 👉 Truyền biến vào đây
       });
-      toast.success("Thanh toán thành công. Cảm ơn bạn đã mua hàng!", {
-        icon: "🎉",
-        duration: 5000,
-      });
+
+      // BƯỚC 3: CHỐT ĐƠN 
+      const { type, data } = await medusa.carts.complete(cartId);
+
+      if (type === "order") {
+        setCart(null);
+        await setStorage({ data: { medusa_cart_id: "" } }); 
+        refreshNewOrders();
+        
+        if (paymentMethod === "zalopay") {
+          // 👉 NẾU LÀ ZALOPAY: Bật mã QR
+          const maQRGiaLap = "00020101021226530010vn.zalopay01061800050203001031817718612500414873838620010A00000072701320006970454011899ZP26096O025982170208QRIBFTTA5204739953037045405110005802VN630456DA";
+          setZaloPayQR(maQRGiaLap); 
+          toast.success("Tạo đơn thành công! Quét mã nhé.", { id: toastId });
+          setShowQR(true); 
+        } else {
+          // 👉 NẾU LÀ TIỀN MẶT: Báo thành công và bay thẳng qua trang Đơn hàng
+          toast.success("Đặt hàng thành công!", { id: toastId });
+          navigate("/orders", { viewTransition: true });
+        }
+      } else {
+        toast.error("Thanh toán chưa hoàn tất.", { id: toastId });
+      }
+
     } catch (error) {
-      console.warn(error);
-      toast.error(
-        "Thanh toán thất bại. Vui lòng kiểm tra nội dung lỗi bên trong Console."
-      );
+      console.error("Lỗi khi Checkout Medusa:", error);
+      toast.error("Thanh toán thất bại!", { id: toastId });
     }
   };
 }

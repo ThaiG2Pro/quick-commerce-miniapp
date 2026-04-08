@@ -16,7 +16,7 @@ export default function CategorySlider() {
           className={"h-8 flex-none rounded-full p-1 pr-2 flex items-center space-x-1 border border-black/15 ".concat(
             String(category.id) === id
               ? "bg-primary text-primaryForeground"
-              : "bg-section"
+              : "bg-section",
           )}
         >
           <img

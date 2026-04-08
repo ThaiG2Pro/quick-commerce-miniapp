@@ -1,17 +1,15 @@
-import { useCheckout } from "@/hooks";
 import { useAtomValue } from "jotai";
 import { cartTotalState } from "@/state";
 import { formatPrice } from "@/utils/format";
 import { Button } from "zmp-ui";
-import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function Pay() {
   const { totalAmount } = useAtomValue(cartTotalState);
-  const checkout = useCheckout();
-  const [paying, setPaying] = useState(false);
+  const navigate = useNavigate(); // Dùng cái này để chuyển trang
 
   return (
-    <div className="flex-none flex items-center py-3 px-4 space-x-2 bg-section">
+    <div className="flex-none flex items-center py-3 px-4 space-x-2 bg-section border-t">
       <div className="space-y-1 flex-1">
         <div className="text-xs text-subtitle">Tổng thanh toán</div>
         <div className="text-sm font-medium text-primary">
@@ -19,14 +17,9 @@ export default function Pay() {
         </div>
       </div>
       <Button
-        onClick={async () => {
-          setPaying(true);
-          await checkout();
-          setPaying(false);
-        }}
-        disabled={paying}
+        onClick={() => navigate("/checkout")} // 👉 Đơn giản là đẩy qua trang Checkout!
       >
-        Thanh toán
+        Tiến hành Thanh toán
       </Button>
     </div>
   );

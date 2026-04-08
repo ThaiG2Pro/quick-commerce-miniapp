@@ -8,7 +8,7 @@ function CollapsibleOrderItems(props: {
   defaultExpanded?: boolean;
 }) {
   const [collapsed, setCollapsed] = useState(
-    props.defaultExpanded ? false : true
+    props.defaultExpanded ? false : true,
   );
   const displayItems = collapsed ? props.items.slice(0, 1) : props.items;
 

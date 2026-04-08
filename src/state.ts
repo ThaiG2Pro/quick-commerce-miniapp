@@ -1,3 +1,5 @@
+// @ts-ignore
+import medusa from "./medusa-client";
 import { atom } from "jotai";
 import {
   atomFamily,
@@ -20,41 +22,30 @@ import {
 } from "@/types";
 import { requestWithFallback } from "@/utils/request";
 import {
-  getLocation,
-  getPhoneNumber,
   getSetting,
   getUserInfo,
+  getPhoneNumber,
+  getLocation,
+  getStorage, // ĐÃ GOM LÊN TRÊN CÙNG
+  setStorage, // ĐÃ GOM LÊN TRÊN CÙNG
 } from "zmp-sdk/apis";
 import toast from "react-hot-toast";
 import { calculateDistance } from "./utils/location";
 import { formatDistant } from "./utils/format";
 import CONFIG from "./config";
 
+// --- Quản lý thông tin User ---
 export const userInfoKeyState = atom(0);
-
 export const userInfoState = atom<Promise<UserInfo>>(async (get) => {
   get(userInfoKeyState);
-
-  // Nếu người dùng đã chỉnh sửa thông tin tài khoản trước đó, sử dụng thông tin đã lưu trữ
   const savedUserInfo = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
-  // Phía tích hợp có thể thay đổi logic này thành fetch từ server
-  // const savedUserInfo = await fetchUserInfo({ token: await getAccessToken() });
-  if (savedUserInfo) {
-    return JSON.parse(savedUserInfo);
-  }
-
-  const {
-    authSetting: {
-      "scope.userInfo": grantedUserInfo,
-      "scope.userPhonenumber": grantedPhoneNumber,
-    },
-  } = await getSetting({});
+  if (savedUserInfo) return JSON.parse(savedUserInfo);
+  const { authSetting } = await getSetting({});
   const isDev = !window.ZJSBridge;
-  if (grantedUserInfo || isDev) {
-    // Người dùng cho phép truy cập tên và ảnh đại diện
+  if (authSetting?.["scope.userInfo"] || isDev) {
     const { userInfo } = await getUserInfo({});
     const phone =
-      grantedPhoneNumber || isDev // Người dùng cho phép truy cập số điện thoại
+      authSetting?.["scope.userPhonenumber"] || isDev
         ? await get(phoneState)
         : "";
     return {
@@ -67,176 +58,251 @@ export const userInfoState = atom<Promise<UserInfo>>(async (get) => {
     };
   }
 });
-
 export const loadableUserInfoState = loadable(userInfoState);
-
 export const phoneState = atom(async () => {
   let phone = "";
   try {
     const { token } = await getPhoneNumber({});
-    // Phía tích hợp làm theo hướng dẫn tại https://mini.zalo.me/documents/api/getPhoneNumber/ để chuyển đổi token thành số điện thoại người dùng ở server.
-    // phone = await decodeToken(token);
-
-    // Các bước bên dưới để demo chức năng, phía tích hợp có thể bỏ đi sau.
-    toast(
-      "Đã lấy được token chứa số điện thoại người dùng. Phía tích hợp cần decode token này ở server. Giả lập số điện thoại 0912345678...",
-      {
-        icon: "ℹ",
-        duration: 10000,
-      }
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((res) => setTimeout(res, 1000));
     phone = "0912345678";
-    // End demo
-  } catch (error) {
-    console.warn(error);
+  } catch (e) {
+    console.warn(e);
   }
   return phone;
 });
 
+// --- Giao diện chung ---
 export const bannersState = atom(() =>
-  requestWithFallback<string[]>("/banners", [])
+  requestWithFallback<string[]>("/banners", []),
 );
-
 export const tabsState = atom(["Tất cả", "Nam", "Nữ", "Trẻ em"]);
-
 export const selectedTabIndexState = atom(0);
-
 export const categoriesState = atom(() =>
-  requestWithFallback<Category[]>("/categories", [])
+  requestWithFallback<Category[]>("/categories", []),
 );
+export const categoriesStateUpwrapped = unwrap(categoriesState, (p) => p ?? []);
 
-export const categoriesStateUpwrapped = unwrap(
-  categoriesState,
-  (prev) => prev ?? []
-);
-
+// --- 📦 LOGIC LẤY SẢN PHẨM (ĐÃ VƯỢT ẢI NGROK) ---
+// --- 📦 LOGIC LẤY SẢN PHẨM (ĐÃ UPDATE TỰ ĐỘNG LẤY REGION) ---
+// --- 📦 LOGIC LẤY SẢN PHẨM (ĐÃ UPDATE TỰ ĐỘNG LẤY REGION & SỬA LỖI VARIANT_ID) ---
 export const productsState = atom(async (get) => {
-  const categories = await get(categoriesState);
-  const products = await requestWithFallback<
-    (Product & { categoryId: number })[]
-  >("/products", []);
-  return products.map((product) => ({
-    ...product,
-    category: categories.find(
-      (category) => category.id === product.categoryId
-    )!,
-  }));
+  try {
+    // 1. Tự động "hỏi thăm" server xem có những Region nào
+    const { regions } = await medusa.regions.list();
+    if (!regions || regions.length === 0) {
+      console.error("❌ Server chưa cấu hình Region!");
+      return [];
+    }
+    const currentRegionId = regions[0].id; // Lấy ID đầu tiên động 100%
+
+    // 2. Gọi API với Region lấy được và LỆNH BÀI
+    const { products } = await medusa.products.list(
+      {
+        region_id: currentRegionId,
+        fields: "*variants.calculated_price",
+      },
+      {
+        "ngrok-skip-browser-warning": "true", 
+      }
+    );
+
+    return products.map((p: any) => {
+      const variant = p.variants?.[0];
+      const finalPrice = variant?.calculated_price?.calculated_amount || 0;
+
+      return {
+        id: String(p.id),
+        variantId: String(variant?.id), // 👉 ĐÂY LÀ DÒNG CHÍ MẠNG QUYẾT ĐỊNH GIỎ HÀNG SỐNG HAY CHẾT NÈ
+        name: p.title,
+        price: Number(finalPrice), 
+        image: p.thumbnail || "https://via.placeholder.com/150",
+        description: p.description || "",
+        categoryId: p.categories?.[0]?.id || "default",
+        categoryName: p.categories?.[0]?.name || "Khác",
+      };
+    });
+  } catch (error) {
+    console.error("❌ Lỗi gọi API lấy sản phẩm:", error);
+    return [];
+  }
 });
-
 export const flashSaleProductsState = atom((get) => get(productsState));
-
 export const recommendedProductsState = atom((get) => get(productsState));
 
-export const productState = atomFamily((id: number) =>
+export const productState = atomFamily((id: string) =>
   atom(async (get) => {
     const products = await get(productsState);
-    return products.find((product) => product.id === id);
-  })
+    return products.find((p) => String(p.id) === id);
+  }),
 );
 
-export const cartState = atom<Cart>([]);
+export const productsByCategoryState = atomFamily((id: string) =>
+  atom(async (get) => {
+    const products = await get(productsState);
+    return products.filter((p) => String(p.categoryId) === id);
+  }),
+);
 
-export const selectedCartItemIdsState = atom<number[]>([]);
+// --- 🛒 GIỎ HÀNG (Cart) ---
 
+// 1. Lưu ID giỏ hàng (Chỉ chứa ID string)
+export const cartIdState = atom<string | null>(null);
+
+// 2. Chứa toàn bộ dữ liệu giỏ hàng (Items, Total,...) từ Medusa
+export const cartState = atom<any | null>(null);
+
+// 3. Atom tính tổng số lượng món để hiện cái Badge màu đỏ
 export const cartTotalState = atom((get) => {
-  const items = get(cartState);
+  const cart = get(cartState);
+  if (!cart || !cart.items) return { totalItems: 0, totalAmount: 0 };
+  
   return {
-    totalItems: items.length,
-    totalAmount: items.reduce(
-      (total, item) => total + item.product.price * item.quantity,
-      0
-    ),
+    totalItems: cart.items.reduce((total: number, item: any) => total + item.quantity, 0),
+    totalAmount: cart.total || 0,
   };
 });
 
-export const keywordState = atom("");
+// ==========================================
+// CÁC HÀM XỬ LÝ GIỎ HÀNG (ACTIONS)
+// ==========================================
 
-export const searchResultState = atom(async (get) => {
-  const keyword = get(keywordState);
-  const products = await get(productsState);
-  await new Promise((resolve) => setTimeout(resolve, 1000));
-  return products.filter((product) =>
-    product.name.toLowerCase().includes(keyword.toLowerCase())
-  );
-});
+// ==========================================
+// CÁC HÀM XỬ LÝ GIỎ HÀNG (ACTIONS)
+// ==========================================
 
-export const productsByCategoryState = atomFamily((id: String) =>
-  atom(async (get) => {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    const products = await get(productsState);
-    return products.filter((product) => String(product.categoryId) === id);
-  })
-);
-
-export const stationsState = atom(async () => {
-  let location: Location | undefined;
+export const initializeCartAtom = atom(null, async (get, set) => {
   try {
-    const { token } = await getLocation({});
-    // Phía tích hợp làm theo hướng dẫn tại https://mini.zalo.me/documents/api/getLocation/ để chuyển đổi token thành thông tin vị trí người dùng ở server.
-    // location = await decodeToken(token);
+    // 1. Lấy Region động trước (kiểu gì cũng cần xài)
+    const { regions } = await medusa.regions.list();
+    if (!regions || regions.length === 0) return;
+    const currentRegionId = regions[0].id;
+    
+    // 2. Đọc Zalo Storage xem có giỏ hàng cũ không
+    const { medusa_cart_id } = await getStorage({ keys: ["medusa_cart_id"] });
 
-    // Các bước bên dưới để demo chức năng, phía tích hợp có thể bỏ đi sau.
-    toast(
-      "Đã lấy được token chứa thông tin vị trí người dùng. Phía tích hợp cần decode token này ở server. Giả lập vị trí tại VNG Campus...",
-      {
-        icon: "ℹ",
-        duration: 10000,
+    if (medusa_cart_id) {
+      try {
+        // Có giỏ cũ -> Cố gắng lấy data từ Medusa
+        const { cart } = await medusa.carts.retrieve(medusa_cart_id);
+        set(cartIdState, cart.id);
+        set(cartState, cart);
+        return; // Thành công thì thoát hàm
+      } catch (retrieveError) {
+        // BƯỚC PHÒNG NGỰ CỰC GẮT LÀ ĐÂY!
+        // Nếu server bị reset (như Onrender nãy giờ), mã giỏ cũ sẽ chết.
+        // Bắt lỗi 400 ở đây, không cho app sập, tự động bỏ qua để tạo giỏ mới!
+        console.warn("⚠️ Giỏ hàng cũ đã bốc hơi khỏi server, tiến hành dọn rác và tạo mới...");
+        await setStorage({ data: { medusa_cart_id: "" } }); 
       }
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    location = {
-      lat: 10.773756,
-      lng: 106.689247,
-    };
-    // End demo
+    } 
+    
+    // 3. Khách mới (hoặc giỏ cũ bị lỗi 400) -> Tạo giỏ hàng mới tinh theo Region động
+    const { cart } = await medusa.carts.create({ region_id: currentRegionId });
+    
+    // LƯU VÀO ZALO STORAGE
+    await setStorage({ data: { medusa_cart_id: cart.id } });
+    
+    set(cartIdState, cart.id);
+    set(cartState, cart);
+    
   } catch (error) {
-    console.warn(error);
+    console.error("❌ Lỗi khởi tạo giỏ hàng:", error);
   }
-
-  const stations = await requestWithFallback<Station[]>("/stations", []);
-  const stationsWithDistance = stations.map((station) => ({
-    ...station,
-    distance: location
-      ? formatDistant(
-          calculateDistance(
-            location.lat,
-            location.lng,
-            station.location.lat,
-            station.location.lng
-          )
-        )
-      : undefined,
-  }));
-
-  return stationsWithDistance;
 });
 
-export const selectedStationIndexState = atom(0);
+// Hàm Thêm sản phẩm
+export const addToCartAtom = atom(null, async (get, set, payload: { variantId: string, quantity: number }) => {
+  const cartId = get(cartIdState);
+  if (!cartId) return;
 
+  try {
+    const { cart } = await medusa.carts.lineItems.create(cartId, {
+      variant_id: payload.variantId,
+      quantity: payload.quantity,
+    });
+    set(cartState, cart); 
+  } catch (error) {
+    console.error("Lỗi thêm vào giỏ:", error);
+  }
+});
+
+// Hàm Cập nhật số lượng (+ / -)
+export const updateCartItemAtom = atom(null, async (get, set, payload: { lineId: string, quantity: number }) => {
+  const cartId = get(cartIdState);
+  if (!cartId) return;
+
+  try {
+    const { cart } = await medusa.carts.lineItems.update(cartId, payload.lineId, {
+      quantity: payload.quantity,
+    });
+    set(cartState, cart);
+  } catch (error) {
+    console.error("Lỗi update giỏ:", error);
+  }
+});
+
+// Hàm Xóa món
+export const removeCartItemAtom = atom(null, async (get, set, lineId: string) => {
+  const cartId = get(cartIdState);
+  if (!cartId) return;
+
+  try {
+    const { cart } = await medusa.carts.lineItems.delete(cartId, lineId);
+    set(cartState, cart);
+  } catch (error) {
+    console.error("Lỗi xóa món:", error);
+  }
+});
+
+// --- Tìm kiếm ---
+export const keywordState = atom("");
+export const searchResultState = atom(async (get) => {
+  const k = get(keywordState);
+  const products = await get(productsState);
+  return products.filter((p) => p.name.toLowerCase().includes(k.toLowerCase()));
+});
+
+// --- Vị trí và Trạm ---
+export const stationsState = atom(async () => {
+  const location = { lat: 10.773756, lng: 106.689247 };
+  const stations = await requestWithFallback<Station[]>("/stations", []);
+  return stations.map((s) => ({
+    ...s,
+    distance: formatDistant(
+      calculateDistance(
+        location.lat,
+        location.lng,
+        s.location.lat,
+        s.location.lng,
+      ),
+    ),
+  }));
+});
+export const selectedStationIndexState = atom(0);
 export const selectedStationState = atom(async (get) => {
-  const index = get(selectedStationIndexState);
-  const stations = await get(stationsState);
-  return stations[index];
+  const idx = get(selectedStationIndexState);
+  const stas = await get(stationsState);
+  return stas[idx];
 });
 
 export const shippingAddressState = atomWithStorage<
   ShippingAddress | undefined
 >(CONFIG.STORAGE_KEYS.SHIPPING_ADDRESS, undefined);
 
-export const ordersState = atomFamily((status: OrderStatus) =>
+export const ordersState = atomFamily((s: OrderStatus) =>
   atomWithRefresh(async () => {
-    // Phía tích hợp thay đổi logic filter server-side nếu cần:
-    // const serverSideFilteredData = await requestWithFallback<Order[]>(`/orders?status=${status}`, []);
-    const allMockOrders = await requestWithFallback<Order[]>("/orders", []);
-    const clientSideFilteredData = allMockOrders.filter(
-      (order) => order.status === status
-    );
-    return clientSideFilteredData;
-  })
+    const orders = await requestWithFallback<Order[]>("/orders", []);
+    return orders.filter((o) => o.status === s);
+  }),
 );
 
 export const deliveryModeState = atomWithStorage<Delivery["type"]>(
   CONFIG.STORAGE_KEYS.DELIVERY,
-  "shipping"
+  "shipping",
 );
+// --- TRẠNG THÁI HIỂN THỊ MÃ QR TRANH TOÁN ---
+// Nút bật/tắt bảng QR
+export const showQRState = atom(false); 
+
+// Biến để hứng cái chuỗi ZaloPay siêu dài từ ông Giang gửi về
+export const zaloPayQRStringState = atom("");

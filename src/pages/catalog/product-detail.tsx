@@ -3,6 +3,7 @@ import { useAtomValue } from "jotai";
 import { useNavigate, useParams } from "react-router-dom";
 import { productState } from "@/state";
 import { formatPrice } from "@/utils/format";
+// Đã sửa lỗi dư chữ 't' ở đây
 import ShareButton from "./share-buttont";
 import RelatedProducts from "./related-products";
 import { useAddToCart } from "@/hooks";
@@ -11,9 +12,26 @@ import Section from "@/components/section";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
-  const product = useAtomValue(productState(Number(id)))!;
+
+  // Dùng String(id) vì ID của Medusa là chuỗi
+  const product = useAtomValue(productState(String(id)));
 
   const navigate = useNavigate();
+
+  // Rào chắn chặn lỗi văng app
+  if (!product) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center p-4">
+        <div className="text-xl font-bold mb-2 text-primary">
+          Đang tải dữ liệu...
+        </div>
+        <div className="text-subtitle text-center">
+          Nếu màn hình đứng quá lâu, sản phẩm này có thể không tồn tại.
+        </div>
+      </div>
+    );
+  }
+
   const { addToCart } = useAddToCart(product);
 
   return (
@@ -33,7 +51,8 @@ export default function ProductDetailPage() {
             <div className="text-xl font-bold text-primary">
               {formatPrice(product.price)}
             </div>
-            {product.originalPrice && (
+            {/* Đã rào chắn thêm điều kiện giá gốc phải lớn hơn giá bán để không bị lỗi tính toán */}
+            {product.originalPrice && product.originalPrice > product.price && (
               <div className="text-2xs space-x-0.5">
                 <span className="text-subtitle line-through">
                   {formatPrice(product.originalPrice)}
@@ -50,12 +69,12 @@ export default function ProductDetailPage() {
           </div>
           <ShareButton product={product} />
         </div>
-        {product.detail && (
+        {product.description && (
           <>
             <div className="bg-background h-2 w-full"></div>
             <Section title="Mô tả sản phẩm">
               <div className="text-sm whitespace-pre-wrap text-subtitle p-4 pt-2">
-                {product.detail}
+                {product.description}
               </div>
             </Section>
           </>

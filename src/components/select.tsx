@@ -12,12 +12,12 @@ export interface SelectProps<T> {
 
 export default function Select<T>(props: SelectProps<T>) {
   const [localValue, setLocalValue] = useState(
-    props.value ? props.renderItemKey(props.value) : ""
+    props.value ? props.renderItemKey(props.value) : "",
   );
 
   const flush = () => {
     const selectedItem = props.items.find(
-      (item) => props.renderItemKey(item) === localValue
+      (item) => props.renderItemKey(item) === localValue,
     );
     props.onChange(selectedItem);
   };

@@ -3,7 +3,6 @@ import zaloMiniApp from "zmp-vite-plugin";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
-// https://vitejs.dev/config/
 export default () => {
   return defineConfig({
     root: "./",
@@ -11,14 +10,7 @@ export default () => {
     plugins: [zaloMiniApp(), react()],
     resolve: {
       alias: {
-        "@": path.resolve(__dirname, "./src"),
-      },
-    },
-    css: {
-      preprocessorOptions: {
-        scss: {
-          api: "modern-compiler",
-        },
+        "@": path.resolve("./src"),
       },
     },
   });

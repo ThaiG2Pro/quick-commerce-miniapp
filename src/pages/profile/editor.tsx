@@ -23,7 +23,7 @@ function ProfileEditorPage() {
         });
         localStorage.setItem(
           CONFIG.STORAGE_KEYS.USER_INFO,
-          JSON.stringify(newUserInfo)
+          JSON.stringify(newUserInfo),
         );
         refreshUserInfo();
         toast.success("Đã cập nhật thông tin tài khoản");
