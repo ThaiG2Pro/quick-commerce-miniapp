@@ -1,5 +1,5 @@
 import Medusa from "@medusajs/js-sdk";
-import { Station, StorefrontProfile } from "@/types";
+import { LoyaltyProfile, Station, StorefrontProfile } from "@/types";
 
 // Cấu hình Medusa SDK
 const MEDUSA_BACKEND_URL = import.meta.env.VITE_MEDUSA_BACKEND_URL || "http://localhost:9000";
@@ -519,6 +519,48 @@ function mapBranchToStation(branch: BranchPayload, index: number): Station | nul
   };
 }
 
+function toNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function parseLoyaltyProfile(source: unknown): LoyaltyProfile | null {
+  if (!isObject(source)) {
+    return null;
+  }
+
+  const points = toNumber(source.points);
+  const expiryDate =
+    toNonEmptyString(source.expiry_date) ||
+    toNonEmptyString(source.expiryDate) ||
+    toNonEmptyString(source.expires_at) ||
+    toNonEmptyString(source.expiresAt);
+  const barcodeValue =
+    toNonEmptyString(source.barcode_value) ||
+    toNonEmptyString(source.barcodeValue) ||
+    toNonEmptyString(source.member_code) ||
+    toNonEmptyString(source.memberCode) ||
+    toNonEmptyString(source.code);
+
+  if (points === undefined || !expiryDate || !barcodeValue) {
+    return null;
+  }
+
+  return {
+    points,
+    expiryDate,
+    barcodeValue,
+  };
+}
+
 /**
  * Lấy thông tin branding của storefront từ Medusa.
  * Ưu tiên custom route `/store/storefront-profile`, fallback về `/store/store`.
@@ -569,6 +611,32 @@ export async function getStoreBranches(): Promise<Station[]> {
   } catch (error) {
     console.warn("Store branches endpoint unavailable:", error);
     return [];
+  }
+}
+
+/**
+ * Lấy điểm tích lũy thành viên cho màn hình Profile.
+ */
+export async function getLoyaltyProfile(): Promise<LoyaltyProfile | null> {
+  try {
+    const response = await sdk.client.fetch<{
+      loyalty?: unknown;
+      points?: unknown;
+      member?: unknown;
+      profile?: unknown;
+      data?: unknown;
+    }>("/store/loyalty-profile");
+    const profile =
+      parseLoyaltyProfile(response.loyalty) ||
+      parseLoyaltyProfile(response.points) ||
+      parseLoyaltyProfile(response.member) ||
+      parseLoyaltyProfile(response.profile) ||
+      parseLoyaltyProfile(response.data) ||
+      parseLoyaltyProfile(response);
+    return profile;
+  } catch (error) {
+    console.warn("Loyalty profile endpoint unavailable:", error);
+    return null;
   }
 }
 

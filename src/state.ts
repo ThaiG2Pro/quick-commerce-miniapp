@@ -12,6 +12,7 @@ import {
   Category,
   Delivery,
   Location,
+  LoyaltyProfile,
   Order,
   OrderStatus,
   Product,
@@ -42,6 +43,7 @@ import {
   getCart,
   getProducts,
   getRegions,
+  getLoyaltyProfile,
   getStoreBranches,
   getStorefrontProfile,
   listCartShippingOptions,
@@ -63,6 +65,11 @@ const DEFAULT_STOREFRONT_PROFILE: StorefrontProfile = {
   shopName: getConfig((config) => config.template.shopName),
   shopAddress: getConfig((config) => config.template.shopAddress),
   logoUrl: getConfig((config) => config.template.logoUrl),
+};
+const DEFAULT_LOYALTY_PROFILE: LoyaltyProfile = {
+  points: 20,
+  expiryDate: "2024-12-02",
+  barcodeValue: "MEMBER-0001",
 };
 
 export const userInfoKeyState = atom(0);
@@ -113,6 +120,16 @@ export const storefrontProfileState = atom(async () => {
 export const storefrontProfileStateUnwrapped = unwrap(
   storefrontProfileState,
   (prev) => prev ?? DEFAULT_STOREFRONT_PROFILE
+);
+
+export const loyaltyProfileState = atom(async () => {
+  const profile = await getLoyaltyProfile();
+  return profile || DEFAULT_LOYALTY_PROFILE;
+});
+
+export const loyaltyProfileStateUnwrapped = unwrap(
+  loyaltyProfileState,
+  (prev) => prev ?? DEFAULT_LOYALTY_PROFILE
 );
 
 export const phoneState = atom(async () => {

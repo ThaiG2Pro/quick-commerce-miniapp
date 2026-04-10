@@ -71,7 +71,40 @@ Example response:
 - Server must verify token with Zalo Open API and `appsecret_proof`.
 - Return user/customer profile and optionally JWT token (`jwt` or `token` or `accessToken`) for Medusa SDK session.
 
-## 4) Cart issue to fix on server
+## 4) Loyalty profile (points + expiry + barcode/member code)
+
+Client profile screen now supports loading loyalty data from backend.
+
+### Endpoint
+
+- **GET** `/store/loyalty-profile`
+- Public Store API route (requires `x-publishable-api-key`)
+
+Accepted response fields (one of these shapes):
+
+```json
+{
+  "loyalty": {
+    "points": 120,
+    "expiry_date": "2026-12-31",
+    "barcode_value": "MEMBER-ABC-001"
+  }
+}
+```
+
+or
+
+```json
+{
+  "points": 120,
+  "expiryDate": "2026-12-31",
+  "barcodeValue": "MEMBER-ABC-001"
+}
+```
+
+If this endpoint is missing, client falls back to demo defaults.
+
+## 5) Cart issue to fix on server
 
 Current backend is returning:
 

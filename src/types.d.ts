@@ -13,6 +13,12 @@ export interface StorefrontProfile {
   logoUrl: string;
 }
 
+export interface LoyaltyProfile {
+  points: number;
+  expiryDate: string;
+  barcodeValue: string;
+}
+
 export interface Product {
   id: number;
   medusaId?: string;
