@@ -1,7 +1,7 @@
 import HorizontalDivider from "@/components/horizontal-divider";
 import ProductGrid from "@/components/product-grid";
 import { useAtomValue } from "jotai";
-import { productsByCategoryState, productsState } from "@/state";
+import { productsByCategoryHandleState } from "@/state";
 import CategorySlider from "@/components/category-slider";
 import { Suspense } from "react";
 import { ProductGridSkeleton } from "../search";
@@ -9,8 +9,8 @@ import { EmptyCategory } from "@/components/empty";
 import { useParams } from "react-router-dom";
 
 function ProductList() {
-  const { id } = useParams();
-  const products = useAtomValue(productsByCategoryState(id));
+  const { handle = "" } = useParams();
+  const products = useAtomValue(productsByCategoryHandleState(handle));
 
   if (!products.length) {
     return <EmptyCategory />;

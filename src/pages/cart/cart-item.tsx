@@ -3,25 +3,12 @@ import { CartItem as CartItemProps } from "@/types";
 import { formatPrice } from "@/utils/format";
 import { animated, useSpring } from "@react-spring/web";
 import { useDrag } from "@use-gesture/react";
-import { useAtom } from "jotai";
-import { selectedCartItemIdsState } from "@/state";
-import { useEffect, useState } from "react";
 import { Icon } from "zmp-ui";
 
 const SWIPE_TO_DELTE_OFFSET = 80;
 
 export default function CartItem(props: CartItemProps) {
-  const [quantity, setQuantity] = useState(props.quantity);
-  const { addToCart } = useAddToCart(props.product);
-
-  const [selectedItemIds, setSelectedItemIds] = useAtom(
-    selectedCartItemIdsState
-  );
-
-  // update cart
-  useEffect(() => {
-    addToCart(quantity);
-  }, [quantity]);
+  const { addToCart, isPending } = useAddToCart(props.product);
 
   // swipe left to delete animation
   const [{ x }, api] = useSpring(() => ({ x: 0 }));
@@ -51,7 +38,10 @@ export default function CartItem(props: CartItemProps) {
       <div className="absolute right-0 top-0 bottom-0 w-20 py-px">
         <div
           className="bg-danger text-white/95 w-full h-full flex flex-col space-y-1 justify-center items-center cursor-pointer"
-          onClick={() => addToCart(0)}
+          onClick={() => {
+            if (isPending) return;
+            addToCart(0);
+          }}
         >
           <Icon icon="zi-delete" />
           <div className="text-2xs font-medium">Xoá</div>
@@ -77,7 +67,7 @@ export default function CartItem(props: CartItemProps) {
             )}
           </div>
         </div>
-        <div className="text-sm font-medium">x{quantity}</div>
+        <div className="text-sm font-medium">x{props.quantity}</div>
       </animated.div>
     </div>
   );

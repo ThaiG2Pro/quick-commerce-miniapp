@@ -3,6 +3,8 @@ const CONFIG = {
     USER_INFO: "userInfo",
     DELIVERY: "delivery",
     SHIPPING_ADDRESS: "shippingAddress",
+    CART_ID: "medusaCartId",
+    SHIPPING_OPTION_ID: "medusaShippingOptionId",
   },
 };
 

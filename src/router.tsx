@@ -93,12 +93,12 @@ const router = createBrowserRouter(
           },
         },
         {
-          path: "/category/:id",
+          path: "/category/:handle",
           element: <CategoryDetailPage />,
           handle: {
             search: true,
             title: ({ categories, params }) =>
-              categories.find((c) => String(c.id) === params.id)?.name,
+              categories.find((c) => c.handle === params.handle)?.name,
           },
         },
         {

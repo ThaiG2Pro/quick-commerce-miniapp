@@ -5,7 +5,8 @@ import Section from "@/components/section";
 import HorizontalDivider from "@/components/horizontal-divider";
 
 export default function CartSummary() {
-  const { totalAmount } = useAtomValue(cartTotalState);
+  const { subtotalAmount, totalAmount, currencyCode } =
+    useAtomValue(cartTotalState);
 
   return (
     <Section title="Thanh toán" className="rounded-lg">
@@ -14,18 +15,14 @@ export default function CartSummary() {
           <tbody>
             <tr>
               <th>Tạm tính</th>
-              <td>{formatPrice(totalAmount)}</td>
-            </tr>
-            <tr>
-              <th>Phí vận chuyển</th>
-              <td>0 VND</td>
+              <td>{formatPrice(subtotalAmount, currencyCode)}</td>
             </tr>
           </tbody>
         </table>
         <HorizontalDivider />
         <div className="flex justify-between font-medium text-sm">
-          <div>Tổng thanh toán</div>
-          <div>{formatPrice(totalAmount)}</div>
+          <div>Tổng dự kiến</div>
+          <div>{formatPrice(totalAmount, currencyCode)}</div>
         </div>
       </div>
     </Section>
