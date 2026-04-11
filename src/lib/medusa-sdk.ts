@@ -1,5 +1,6 @@
 import Medusa from "@medusajs/js-sdk";
-import { LoyaltyProfile, Station, StorefrontProfile } from "@/types";
+import { LoyaltyProfile, Station, StorefrontProfile, UserInfo } from "@/types";
+import CONFIG from "@/config";
 
 // Cấu hình Medusa SDK
 const MEDUSA_BACKEND_URL = import.meta.env.VITE_MEDUSA_BACKEND_URL || "http://localhost:9000";
@@ -484,6 +485,71 @@ export async function getCurrentCustomer() {
 }
 
 /**
+ * Cập nhật thông tin customer hiện tại trên Medusa.
+ */
+export async function updateCurrentCustomer(payload: {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  metadata?: Record<string, unknown>;
+}) {
+  try {
+    const response = await sdk.store.customer.update(payload);
+    return response.customer;
+  } catch (error) {
+    console.error("Error updating customer:", error);
+    throw error;
+  }
+}
+
+/**
+ * Chuyển Medusa customer thành UserInfo của app.
+ */
+export function transformMedusaCustomerToUserInfo(customer: unknown): UserInfo | null {
+  if (!customer || typeof customer !== "object") {
+    return null;
+  }
+
+  const record = customer as {
+    id?: string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    phone?: string;
+    avatar?: string;
+    image?: string;
+    metadata?: Record<string, unknown>;
+  };
+
+  const firstName = typeof record.first_name === "string" ? record.first_name.trim() : "";
+  const lastName = typeof record.last_name === "string" ? record.last_name.trim() : "";
+  const name = [firstName, lastName].filter(Boolean).join(" ");
+  const metadata = record.metadata || {};
+  const address =
+    (typeof metadata.address === "string" && metadata.address) ||
+    (typeof metadata.address_1 === "string" && metadata.address_1) ||
+    (typeof metadata.city === "string" && metadata.city) ||
+    "";
+
+  return {
+    id: record.id || "",
+    name: name || (typeof metadata.name === "string" ? metadata.name : ""),
+    avatar:
+      record.avatar ||
+      record.image ||
+      (typeof metadata.avatar === "string" ? metadata.avatar : "") ||
+      "",
+    phone:
+      record.phone ||
+      (typeof metadata.phone === "string" ? metadata.phone : "") ||
+      "",
+    email: record.email || "",
+    address,
+  };
+}
+
+/**
  * Tìm kiếm sản phẩm
  */
 export async function searchProducts(query: string, params?: {
@@ -750,6 +816,9 @@ export async function authenticateWithZaloAccessToken(accessToken: string) {
     const authToken = response.jwt || response.token || response.accessToken;
     if (authToken) {
       await sdk.client.setToken(authToken);
+      if (typeof window !== "undefined") {
+        localStorage.setItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN, authToken);
+      }
     }
 
     return response;
@@ -757,6 +826,23 @@ export async function authenticateWithZaloAccessToken(accessToken: string) {
     console.error("Error authenticating with Zalo access token:", error);
     throw error;
   }
+}
+
+/**
+ * Khôi phục token phiên customer đã lưu để SDK gọi được các endpoint cần auth.
+ */
+export async function hydrateMedusaAuthFromStorage() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const token = localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN);
+  if (!token) {
+    return false;
+  }
+
+  await sdk.client.setToken(token);
+  return true;
 }
 
 export default sdk;

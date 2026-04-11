@@ -34,9 +34,11 @@ import {
   addShippingMethod,
   authenticateWithZaloAccessToken,
   completeCart,
+  getCurrentCustomer,
   getCart,
   initiateCartPaymentSession,
   listCartPaymentProviders,
+  transformMedusaCustomerToUserInfo,
   updateCartContact,
 } from "@/lib/medusa-sdk";
 
@@ -61,17 +63,33 @@ type ZaloAuthResponse = {
   id?: string;
   name?: string;
   avatar?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  picture?: {
+    data?: {
+      url?: string;
+    };
+  };
 };
 
 function normalizeUserInfo(
   authResponse: ZaloAuthResponse,
   fallbackUserInfo: UserInfo
 ): UserInfo {
-  const authUser =
+  const authUser: ZaloProfilePayload =
     authResponse.user ||
     authResponse.customer ||
     authResponse.profile ||
-    authResponse;
+    {
+      id: authResponse.id,
+      name: authResponse.name,
+      avatar: authResponse.avatar,
+      phone: authResponse.phone,
+      email: authResponse.email,
+      address: authResponse.address,
+      picture: authResponse.picture,
+    };
 
   return {
     id: authUser.id || fallbackUserInfo.id,
@@ -129,6 +147,57 @@ export function useRequestInformation() {
   const setInfoKey = useSetAtom(userInfoKeyState);
   const refreshPermissions = () => setInfoKey((key) => key + 1);
 
+  const refreshMedusaCustomerProfile = async (baseUserInfo: UserInfo) => {
+    const storedAuthToken = localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN);
+    if (storedAuthToken) {
+      try {
+        const medusaCustomer = await getCurrentCustomer();
+        const medusaUserInfo = transformMedusaCustomerToUserInfo(medusaCustomer);
+
+        if (!medusaUserInfo) {
+          return baseUserInfo;
+        }
+
+        const mergedUserInfo: UserInfo = {
+          id: medusaUserInfo.id || baseUserInfo.id,
+          name: medusaUserInfo.name || baseUserInfo.name,
+          avatar: medusaUserInfo.avatar || baseUserInfo.avatar,
+          phone: medusaUserInfo.phone || baseUserInfo.phone,
+          email: medusaUserInfo.email || baseUserInfo.email,
+          address: medusaUserInfo.address || baseUserInfo.address,
+        };
+
+        localStorage.setItem(
+          CONFIG.STORAGE_KEYS.USER_INFO,
+          JSON.stringify(mergedUserInfo)
+        );
+
+        return mergedUserInfo;
+      } catch (error) {
+        console.warn("Cannot refresh Medusa customer profile from stored token:", error);
+        return baseUserInfo;
+      }
+    }
+
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      return baseUserInfo;
+    }
+
+    const authResponse = await authenticateWithZaloAccessToken(accessToken);
+    const normalizedUserInfo = normalizeUserInfo(
+      authResponse as ZaloAuthResponse,
+      baseUserInfo
+    );
+
+    localStorage.setItem(
+      CONFIG.STORAGE_KEYS.USER_INFO,
+      JSON.stringify(normalizedUserInfo)
+    );
+
+    return normalizedUserInfo;
+  };
+
   return async () => {
     const userInfo = await getStoredUserInfo();
     if (!userInfo) {
@@ -139,12 +208,12 @@ export function useRequestInformation() {
       const accessToken = await getAccessToken();
       const authResponse = await authenticateWithZaloAccessToken(accessToken);
       const refreshedUserInfo = await getStoredUserInfo();
-      const fallbackUserInfo =
+      const fallbackUserInfo: UserInfo =
         refreshedUserInfo ||
         (await getUserInfo({}).then(({ userInfo: profile }) => ({
-          id: profile.id,
-          name: profile.name,
-          avatar: profile.avatar,
+          id: profile.id || "",
+          name: profile.name || "",
+          avatar: profile.avatar || "",
           phone: "",
           email: "",
           address: "",
@@ -162,7 +231,13 @@ export function useRequestInformation() {
       refreshPermissions();
       return normalizedUserInfo;
     }
-    return userInfo;
+
+    try {
+      return await refreshMedusaCustomerProfile(userInfo);
+    } catch (error) {
+      console.warn("Cannot refresh Medusa customer profile from Zalo token:", error);
+      return userInfo;
+    }
   };
 }
 

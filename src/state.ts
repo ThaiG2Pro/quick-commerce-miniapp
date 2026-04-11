@@ -48,6 +48,9 @@ import {
   getStoreBranches,
   getStorefrontProfile,
   getOrders,
+  getCurrentCustomer,
+  transformMedusaCustomerToUserInfo,
+  hydrateMedusaAuthFromStorage,
   listCartShippingOptions,
   listCartPaymentProviders,
   removeLineItem,
@@ -80,6 +83,34 @@ export const userInfoKeyState = atom(0);
 
 export const userInfoState = atom<Promise<UserInfo>>(async (get) => {
   get(userInfoKeyState);
+
+  try {
+    await hydrateMedusaAuthFromStorage();
+  } catch (error) {
+    console.warn("Cannot hydrate Medusa auth before reading user info:", error);
+  }
+
+  try {
+    const medusaCustomer = await getCurrentCustomer();
+    const medusaUserInfo = transformMedusaCustomerToUserInfo(medusaCustomer);
+    if (medusaUserInfo) {
+      const savedUserInfo = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
+      const parsedSavedUserInfo = savedUserInfo ? JSON.parse(savedUserInfo) as UserInfo : undefined;
+      const mergedUserInfo: UserInfo = {
+        id: parsedSavedUserInfo?.id || medusaUserInfo.id || "",
+        name: parsedSavedUserInfo?.name || medusaUserInfo.name || "",
+        avatar: parsedSavedUserInfo?.avatar || medusaUserInfo.avatar || "",
+        phone: parsedSavedUserInfo?.phone || medusaUserInfo.phone || "",
+        email: parsedSavedUserInfo?.email || medusaUserInfo.email || "",
+        address: parsedSavedUserInfo?.address || medusaUserInfo.address || "",
+      };
+
+      localStorage.setItem(CONFIG.STORAGE_KEYS.USER_INFO, JSON.stringify(mergedUserInfo));
+      return mergedUserInfo;
+    }
+  } catch (error) {
+    console.warn("Cannot load Medusa customer profile, falling back to local user info:", error);
+  }
 
   // Nếu người dùng đã chỉnh sửa thông tin tài khoản trước đó, sử dụng thông tin đã lưu trữ
   const savedUserInfo = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
@@ -177,6 +208,12 @@ export const categoriesStateUpwrapped = unwrap(
 
 export const productsState = atom(async (get) => {
   const categories = await get(categoriesState);
+  const fallbackCategory: Category = {
+    id: 0,
+    handle: "uncategorized",
+    name: "Uncategorized",
+    image: "https://via.placeholder.com/150?text=Category",
+  };
   
   try {
     const medusaProducts = await getProducts({
@@ -192,9 +229,10 @@ export const productsState = atom(async (get) => {
     >("/products", []);
     return products.map((product) => ({
       ...product,
-      category: categories.find(
+      category:
+        categories.find(
         (category) => category.id === product.categoryId
-      )!,
+        ) || fallbackCategory,
     }));
   }
 });

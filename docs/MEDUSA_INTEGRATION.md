@@ -582,9 +582,9 @@ ws.onmessage = (event) => {
 - [ ] Test connection với Medusa backend
 
 ### Phase 2: Product & Categories
-- [ ] Migrate `productsState` to Medusa
-- [ ] Migrate `categoriesState` to Medusa
-- [ ] Update type definitions để match Medusa schema
+- [x] Migrate `productsState` to Medusa-first + mock fallback
+- [x] Migrate `categoriesState` to Medusa-first + mock fallback
+- [x] Update type definitions để match Medusa schema
 - [ ] Test product listing, detail, search
 
 ### Phase 3: Cart Management
@@ -604,8 +604,8 @@ ws.onmessage = (event) => {
 ### Phase 5: Orders & User
 - [x] Migrate `ordersState` to Medusa (with fallback mock)
 - [x] Support order detail deep-link by route id
-- [ ] Implement authentication flow
-- [ ] Sync Zalo user với Medusa customer
+- [x] Implement authentication flow (token persist + session hydrate)
+- [x] Sync Zalo user với Medusa customer (frontend flow)
 - [ ] Test order history and details
 
 ### Phase 6: Advanced Features
