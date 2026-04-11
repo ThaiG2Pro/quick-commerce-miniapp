@@ -5,6 +5,7 @@ const CONFIG = {
     SHIPPING_ADDRESS: "shippingAddress",
     CART_ID: "medusaCartId",
     SHIPPING_OPTION_ID: "medusaShippingOptionId",
+    PAYMENT_PROVIDER_ID: "medusaPaymentProviderId",
   },
 };
 

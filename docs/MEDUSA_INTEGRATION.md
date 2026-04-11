@@ -588,20 +588,22 @@ ws.onmessage = (event) => {
 - [ ] Test product listing, detail, search
 
 ### Phase 3: Cart Management
-- [ ] Implement `cartIdState` với localStorage
-- [ ] Refactor `useAddToCart` để sync với server
-- [ ] Implement cart CRUD operations
-- [ ] Test add/update/remove items
+- [x] Implement `cartIdState` với localStorage
+- [x] Refactor `useAddToCart` để sync với server
+- [x] Implement cart CRUD operations
+- [ ] Test add/update/remove items với backend thật
 
 ### Phase 4: Checkout
-- [ ] Implement multi-step checkout flow
-- [ ] Integrate shipping address
-- [ ] Integrate shipping methods
-- [ ] Setup payment gateway (Zalo Pay)
-- [ ] Test complete checkout flow
+- [x] Implement checkout flow qua Medusa SDK
+- [x] Integrate shipping address
+- [x] Integrate shipping methods
+- [x] Integrate payment provider selection + payment session
+- [ ] Setup payment gateway (Zalo Pay/Stripe backend side)
+- [ ] Test complete checkout flow với backend thật
 
 ### Phase 5: Orders & User
-- [ ] Migrate `ordersState` to Medusa
+- [x] Migrate `ordersState` to Medusa (with fallback mock)
+- [x] Support order detail deep-link by route id
 - [ ] Implement authentication flow
 - [ ] Sync Zalo user với Medusa customer
 - [ ] Test order history and details

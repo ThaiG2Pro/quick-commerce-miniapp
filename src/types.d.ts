@@ -84,6 +84,11 @@ export interface ShippingOption {
   description?: string;
 }
 
+export interface PaymentProviderOption {
+  id: string;
+  name: string;
+}
+
 export interface Location {
   lat: number;
   lng: number;
@@ -92,6 +97,7 @@ export interface Location {
 export interface ShippingAddress {
   alias: string;
   address: string;
+  city: string;
   name: string;
   phone: string;
 }

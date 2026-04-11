@@ -15,8 +15,9 @@
     "Samsung >= 5"
   ],
   "scripts": {
-    "start": "zmp start",
-    "deploy": "zmp deploy",
+    "dev": "PNPM_HOME=\"${PNPM_HOME:-$HOME/.local/share/pnpm}\" PATH=\"$PNPM_HOME:$PATH\" zmp start",
+    "start": "PNPM_HOME=\"${PNPM_HOME:-$HOME/.local/share/pnpm}\" PATH=\"$PNPM_HOME:$PATH\" zmp start",
+    "deploy": "PNPM_HOME=\"${PNPM_HOME:-$HOME/.local/share/pnpm}\" PATH=\"$PNPM_HOME:$PATH\" zmp deploy",
     "build:css": "postcss src/css/tailwind.css -o src/css/styles.css"
   },
   "dependencies": {

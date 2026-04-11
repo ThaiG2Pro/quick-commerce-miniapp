@@ -166,27 +166,20 @@ User Action → Check Cart Exists → Create/Get Cart → Add Line Item → Upda
    ↓
 6. Complete Cart → Order
    ↓
-7. Payment (Zalo Pay)
+7. Show success / keep cart for retry on error
 ```
 
 **Code implementation:**
 ```typescript
 export function useCheckout() {
   return async () => {
-    // Step 1: Add shipping address
-    await addShippingAddress(cartId, addressData);
-    
-    // Step 2: Get shipping options
-    const cart = await getCart(cartId);
-    
-    // Step 3: Select shipping method
-    await addShippingMethod(cartId, cart.shipping_options[0].id);
-    
-    // Step 4: Complete cart
-    const order = await completeCart(cartId);
-    
-    // Step 5: Process payment
-    await processPayment(order);
+   await updateCartContact(cartId, { email });
+   await addShippingAddress(cartId, addressData);
+   await addShippingMethod(cartId, selectedShippingOptionId);
+   await initiateCartPaymentSession(cartId, selectedPaymentProviderId);
+   await completeCart(cartId);
+
+   // clear local cart state only when completeCart succeeds
   };
 }
 ```
@@ -346,26 +339,28 @@ ws.onmessage = (event) => updateOrderState(event.data);
 - [ ] Update TypeScript types
 - [ ] Test product listing/detail/search
 
-### 🔲 Phase 3: Cart (CRITICAL)
-- [ ] Implement `cartIdState` với localStorage
-- [ ] Refactor `useAddToCart` hook
-- [ ] Sync cart với Medusa server
-- [ ] Test cart operations
+### ✅ Phase 3: Cart (DONE)
+- [x] Implement `cartIdState` với localStorage
+- [x] Refactor `useAddToCart` hook
+- [x] Sync cart với Medusa server
+- [ ] Test cart operations với backend thật
 
-### 🔲 Phase 4: Checkout
-- [ ] Implement multi-step checkout
-- [ ] Integrate shipping methods
-- [ ] Setup payment gateway
-- [ ] Test end-to-end checkout
+### ✅ Phase 4: Checkout (DONE - Frontend)
+- [x] Implement checkout flow với Medusa SDK
+- [x] Integrate shipping methods
+- [x] Integrate payment provider selection + payment session
+- [x] Handle complete cart success/error paths
+- [ ] Test end-to-end checkout với backend/payment provider thật
 
-### 🔲 Phase 5: Orders & Auth
-- [ ] Migrate orders state
+### 🔄 Phase 5: Orders & Auth (IN PROGRESS)
+- [x] Migrate orders state (Medusa-first + mock fallback)
+- [x] Implement order detail deep-link loading by id
 - [ ] Implement Zalo ↔ Medusa auth
 - [ ] Test order history
 
-### 🔲 Phase 6: Polish
-- [ ] Error handling
-- [ ] Loading states
+### 🔄 Phase 6: Polish (IN PROGRESS)
+- [x] Error handling
+- [x] Loading states
 - [ ] Offline support
 - [ ] Performance optimization
 

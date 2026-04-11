@@ -208,6 +208,8 @@ export async function addShippingAddress(
     address_1: string;
     city: string;
     country_code: string;
+    address_2?: string;
+    province?: string;
     postal_code?: string;
     phone?: string;
   }
@@ -219,6 +221,26 @@ export async function addShippingAddress(
     return response.cart;
   } catch (error) {
     console.error("Error adding shipping address:", error);
+    throw error;
+  }
+}
+
+/**
+ * Cập nhật thông tin liên hệ của cart (email là bắt buộc cho checkout).
+ */
+export async function updateCartContact(
+  cartId: string,
+  payload: {
+    email?: string;
+  }
+) {
+  try {
+    const response = await sdk.store.cart.update(cartId, {
+      ...(payload.email ? { email: payload.email } : {}),
+    });
+    return response.cart;
+  } catch (error) {
+    console.error("Error updating cart contact:", error);
     throw error;
   }
 }
@@ -257,6 +279,51 @@ export async function listCartShippingOptions(cartId: string) {
 }
 
 /**
+ * Lấy danh sách payment providers khả dụng dựa theo region của cart.
+ */
+export async function listCartPaymentProviders(cartId: string) {
+  try {
+    const cartResponse = await sdk.store.cart.retrieve(cartId);
+    const regionId = cartResponse.cart?.region?.id;
+    if (!regionId) {
+      return [];
+    }
+
+    const response = await sdk.store.payment.listPaymentProviders({
+      region_id: regionId,
+    });
+    return response.payment_providers || [];
+  } catch (error) {
+    console.error("Error listing cart payment providers:", error);
+    throw error;
+  }
+}
+
+/**
+ * Khởi tạo payment session cho cart với provider đã chọn.
+ */
+export async function initiateCartPaymentSession(
+  cartId: string,
+  providerId: string,
+  data?: Record<string, unknown>
+) {
+  try {
+    const cartResponse = await sdk.store.cart.retrieve(cartId);
+    const response = await sdk.store.payment.initiatePaymentSession(
+      cartResponse.cart,
+      {
+        provider_id: providerId,
+        ...(data ? { data } : {}),
+      }
+    );
+    return response.payment_collection;
+  } catch (error) {
+    console.error("Error initiating cart payment session:", error);
+    throw error;
+  }
+}
+
+/**
  * Tính giá cho shipping option dạng calculated
  */
 export async function calculateShippingOption(
@@ -279,12 +346,15 @@ export async function calculateShippingOption(
  */
 export async function applyPromotionCodes(cartId: string, promoCodes: string[]) {
   try {
-    const response = await sdk.client.fetch(`/store/carts/${cartId}/promotions`, {
-      method: "POST",
-      body: {
-        promo_codes: promoCodes,
-      },
-    });
+    const response = await sdk.client.fetch<{ cart: unknown }>(
+      `/store/carts/${cartId}/promotions`,
+      {
+        method: "POST",
+        body: {
+          promo_codes: promoCodes,
+        },
+      }
+    );
     return response.cart;
   } catch (error) {
     console.error("Error applying promotions:", error);
@@ -297,12 +367,15 @@ export async function applyPromotionCodes(cartId: string, promoCodes: string[]) 
  */
 export async function removePromotionCodes(cartId: string, promoCodes: string[]) {
   try {
-    const response = await sdk.client.fetch(`/store/carts/${cartId}/promotions`, {
-      method: "DELETE",
-      body: {
-        promo_codes: promoCodes,
-      },
-    });
+    const response = await sdk.client.fetch<{ cart: unknown }>(
+      `/store/carts/${cartId}/promotions`,
+      {
+        method: "DELETE",
+        body: {
+          promo_codes: promoCodes,
+        },
+      }
+    );
     return response.cart;
   } catch (error) {
     console.error("Error removing promotions:", error);
@@ -316,6 +389,17 @@ export async function removePromotionCodes(cartId: string, promoCodes: string[])
 export async function completeCart(cartId: string) {
   try {
     const response = await sdk.store.cart.complete(cartId);
+
+    if (response.type === "cart") {
+      const errorCode =
+        typeof response.error === "string"
+          ? response.error
+          : "cart_not_completed";
+      throw new Error(
+        `Medusa checkout chưa hoàn tất cart. error=${errorCode}`
+      );
+    }
+
     return response.order;
   } catch (error) {
     console.error("Error completing cart:", error);

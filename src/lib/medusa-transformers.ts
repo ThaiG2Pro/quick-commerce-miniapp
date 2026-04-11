@@ -13,7 +13,11 @@ import type {
   MedusaCart,
   Cart,
   CartPricing,
-  ProductVariant
+  ProductVariant,
+  Order,
+  OrderStatus,
+  PaymentStatus,
+  CartItem
 } from "@/types";
 
 /**
@@ -260,6 +264,128 @@ export function transformMedusaCartPricing(cart: MedusaCart): CartPricing {
       .filter((code): code is string => Boolean(code)),
     shippingMethodName: selectedShippingMethod?.shipping_option?.name,
   };
+}
+
+function mapOrderStatus(order: any): OrderStatus {
+  if (order?.status === "completed") {
+    return "completed";
+  }
+
+  const fulfillment = String(order?.fulfillment_status || "").toLowerCase();
+  if (
+    fulfillment.includes("ship") ||
+    fulfillment.includes("deliver")
+  ) {
+    return "shipping";
+  }
+
+  return "pending";
+}
+
+function mapPaymentStatus(order: any): PaymentStatus {
+  const payment = String(order?.payment_status || "").toLowerCase();
+  if (payment.includes("captured") || payment.includes("paid")) {
+    return "success";
+  }
+  if (payment.includes("fail") || payment.includes("cancel")) {
+    return "failed";
+  }
+  return "pending";
+}
+
+function parseDateValue(value: unknown): Date | null {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function mapReceivedAt(order: any, createdAt: Date): Date {
+  const fulfillmentCandidate = order?.fulfillments?.[0];
+  const etaFromMetadata = parseDateValue(order?.metadata?.received_at);
+  const deliveredAt = parseDateValue(
+    fulfillmentCandidate?.delivered_at || fulfillmentCandidate?.updated_at
+  );
+  const shippedAt = parseDateValue(fulfillmentCandidate?.shipped_at);
+
+  return etaFromMetadata || deliveredAt || shippedAt || createdAt;
+}
+
+function mapOrderItems(order: any): CartItem[] {
+  const defaultCategory: Category = {
+    id: 0,
+    handle: "uncategorized",
+    name: "Uncategorized",
+    image: "https://via.placeholder.com/150?text=Category",
+  };
+
+  return (order?.items || []).map((item: any) => {
+    const productId =
+      item?.product_id || item?.variant?.product_id || item?.id || "product";
+    const productName =
+      item?.title || item?.variant?.title || "Sản phẩm";
+
+    return {
+      lineItemId: item?.id,
+      variantTitle: item?.variant?.title,
+      subtotal: item?.subtotal,
+      taxTotal: item?.tax_total,
+      total: item?.total,
+      quantity: item?.quantity || 0,
+      product: {
+        id: hashId(String(productId)),
+        medusaId: String(productId),
+        variantId: item?.variant_id || item?.variant?.id,
+        isPurchasable: true,
+        name: productName,
+        price: item?.unit_price || 0,
+        image:
+          item?.thumbnail ||
+          item?.variant?.product?.thumbnail ||
+          `https://via.placeholder.com/400?text=${encodeURIComponent(productName)}`,
+        category: defaultCategory,
+      },
+    };
+  });
+}
+
+export function transformMedusaOrders(orders: any[]): Order[] {
+  return orders.map((order) => {
+    const createdAt = new Date(order?.created_at || Date.now());
+    const shippingAddress = order?.shipping_address;
+    const alias =
+      shippingAddress?.first_name || shippingAddress?.last_name
+        ? `${shippingAddress?.first_name || ""} ${shippingAddress?.last_name || ""}`.trim()
+        : "Địa chỉ nhận hàng";
+
+    return {
+      id: hashId(String(order?.id || order?.display_id || Date.now())),
+      status: mapOrderStatus(order),
+      paymentStatus: mapPaymentStatus(order),
+      createdAt,
+      receivedAt: mapReceivedAt(order, createdAt),
+      items: mapOrderItems(order),
+      delivery: shippingAddress
+        ? {
+            type: "shipping",
+            alias,
+            address: shippingAddress?.address_1 || "",
+            city: shippingAddress?.city || "",
+            name: alias,
+            phone: shippingAddress?.phone || "",
+          }
+        : {
+            type: "pickup",
+            stationId: 0,
+          },
+      total: order?.total || 0,
+      note:
+        (order?.metadata?.note as string | undefined) ||
+        (order?.customer_note as string | undefined) ||
+        "",
+    } satisfies Order;
+  });
 }
 
 /**

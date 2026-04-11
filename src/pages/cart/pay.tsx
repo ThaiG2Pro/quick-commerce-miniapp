@@ -1,9 +1,15 @@
 import { useCheckout } from "@/hooks";
-import { useAtomValue } from "jotai";
-import { cartInitializingState, cartMutatingState, cartTotalState } from "@/state";
+import { useAtom, useAtomValue } from "jotai";
+import {
+  cartInitializingState,
+  cartMutatingState,
+  cartTotalState,
+  paymentProvidersState,
+  selectedPaymentProviderIdState,
+} from "@/state";
 import { formatPrice } from "@/utils/format";
 import { Button } from "zmp-ui";
-import { useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 
 export default function Pay() {
   const {
@@ -18,6 +24,7 @@ export default function Pay() {
   } = useAtomValue(cartTotalState);
   const cartMutating = useAtomValue(cartMutatingState);
   const cartInitializing = useAtomValue(cartInitializingState);
+  const selectedPaymentProviderId = useAtomValue(selectedPaymentProviderIdState);
   const checkout = useCheckout();
   const [paying, setPaying] = useState(false);
 
@@ -64,19 +71,81 @@ export default function Pay() {
           </div>
         </div>
       </div>
+      <Suspense
+        fallback={<div className="px-4 pb-2 text-xs text-subtitle">Đang tải phương thức thanh toán...</div>}
+      >
+        <PaymentProviderSelector />
+      </Suspense>
       <div className="flex items-center py-2 px-4">
         <div className="flex-1" />
         <Button
           className="w-full"
           onClick={async () => {
             setPaying(true);
-            await checkout();
-            setPaying(false);
+            try {
+              await checkout();
+            } finally {
+              setPaying(false);
+            }
           }}
-          disabled={paying || cartMutating || cartInitializing}
+          disabled={paying || cartMutating || cartInitializing || !selectedPaymentProviderId}
         >
           {paying ? "Đang xử lý..." : "Thanh toán"}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function PaymentProviderSelector() {
+  const providers = useAtomValue(paymentProvidersState);
+  const [selectedPaymentProviderId, setSelectedPaymentProviderId] = useAtom(
+    selectedPaymentProviderIdState
+  );
+
+  const effectiveSelectedId = useMemo(() => {
+    if (
+      selectedPaymentProviderId &&
+      providers.some((provider) => provider.id === selectedPaymentProviderId)
+    ) {
+      return selectedPaymentProviderId;
+    }
+    return providers[0]?.id || null;
+  }, [providers, selectedPaymentProviderId]);
+
+  useEffect(() => {
+    if (!effectiveSelectedId || selectedPaymentProviderId === effectiveSelectedId) {
+      return;
+    }
+    setSelectedPaymentProviderId(effectiveSelectedId);
+  }, [effectiveSelectedId, selectedPaymentProviderId, setSelectedPaymentProviderId]);
+
+  if (!providers.length) {
+    return (
+      <div className="px-4 pb-2 text-xs text-subtitle">
+        Chưa có phương thức thanh toán khả dụng.
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 pb-2">
+      <div className="text-xs text-subtitle mb-2">Phương thức thanh toán</div>
+      <div className="space-y-2">
+        {providers.map((provider) => {
+          const isSelected = provider.id === effectiveSelectedId;
+          return (
+            <button
+              key={provider.id}
+              className={`w-full text-left rounded-lg border px-3 py-2 text-sm ${
+                isSelected ? "border-primary bg-primary/5" : "border-black/10"
+              }`}
+              onClick={() => setSelectedPaymentProviderId(provider.id)}
+            >
+              {provider.name}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

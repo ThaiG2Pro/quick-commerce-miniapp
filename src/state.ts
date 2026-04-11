@@ -16,6 +16,7 @@ import {
   Order,
   OrderStatus,
   Product,
+  PaymentProviderOption,
   ShippingOption,
   ShippingAddress,
   Station,
@@ -46,7 +47,9 @@ import {
   getLoyaltyProfile,
   getStoreBranches,
   getStorefrontProfile,
+  getOrders,
   listCartShippingOptions,
+  listCartPaymentProviders,
   removeLineItem,
   removePromotionCodes,
   updateLineItem,
@@ -56,6 +59,7 @@ import {
   transformCategory,
   transformMedusaCart,
   transformMedusaCartPricing,
+  transformMedusaOrders,
   transformProducts,
 } from "@/lib/medusa-transformers";
 
@@ -218,6 +222,10 @@ export const cartPromotionMutatingState = atom(false);
 export const cartErrorState = atom<string | null>(null);
 export const selectedShippingOptionIdState = atomWithStorage<string | null>(
   CONFIG.STORAGE_KEYS.SHIPPING_OPTION_ID,
+  null
+);
+export const selectedPaymentProviderIdState = atomWithStorage<string | null>(
+  CONFIG.STORAGE_KEYS.PAYMENT_PROVIDER_ID,
   null
 );
 
@@ -472,6 +480,23 @@ export const shippingOptionsState = atom(async (get) => {
     .filter((option): option is ShippingOption => option !== null);
 });
 
+export const paymentProvidersState = atom(async (get) => {
+  const cartId = get(cartIdState);
+  if (!cartId) {
+    return [] as PaymentProviderOption[];
+  }
+
+  const providers = await listCartPaymentProviders(cartId);
+  return providers.map((provider) => ({
+    id: provider.id,
+    name:
+      provider.name?.trim() ||
+      provider.id
+        .replace(/^pp_/, "")
+        .replace(/_/g, " "),
+  }));
+});
+
 export const selectShippingOptionState = atom(
   null,
   async (get, set, shippingOptionId: string) => {
@@ -713,13 +738,46 @@ export const shippingAddressState = atomWithStorage<
 
 export const ordersState = atomFamily((status: OrderStatus) =>
   atomWithRefresh(async () => {
-    // Phía tích hợp thay đổi logic filter server-side nếu cần:
-    // const serverSideFilteredData = await requestWithFallback<Order[]>(`/orders?status=${status}`, []);
-    const allMockOrders = await requestWithFallback<Order[]>("/orders", []);
-    const clientSideFilteredData = allMockOrders.filter(
-      (order) => order.status === status
-    );
-    return clientSideFilteredData;
+    try {
+      const medusaOrders = await getOrders({
+        limit: 50,
+        offset: 0,
+      });
+      const transformedOrders = transformMedusaOrders(medusaOrders)
+        .filter((order) => order.status === status)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+      return transformedOrders;
+    } catch (error) {
+      console.warn("Cannot load orders from Medusa, fallback to mock orders:", error);
+      const allMockOrders = await requestWithFallback<Order[]>("/orders", []);
+      return allMockOrders.filter((order) => order.status === status);
+    }
+  })
+);
+
+export const orderDetailState = atomFamily((orderId: number) =>
+  atomWithRefresh(async () => {
+    if (!Number.isFinite(orderId) || orderId <= 0) {
+      return undefined as Order | undefined;
+    }
+
+    try {
+      const medusaOrders = await getOrders({
+        limit: 100,
+        offset: 0,
+      });
+      const transformedOrders = transformMedusaOrders(medusaOrders);
+      const matchedOrder = transformedOrders.find((order) => order.id === orderId);
+      if (matchedOrder) {
+        return matchedOrder;
+      }
+    } catch (error) {
+      console.warn("Cannot load order detail from Medusa, fallback to mock orders:", error);
+    }
+
+    const mockOrders = await requestWithFallback<Order[]>("/orders", []);
+    return mockOrders.find((order) => order.id === orderId);
   })
 );
 

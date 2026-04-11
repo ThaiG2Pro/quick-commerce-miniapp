@@ -13,21 +13,32 @@ import {
   cartIdState,
   cartMutatingState,
   cartPricingState,
-  cartTotalState,
+  cartErrorState,
   addOrUpdateCartItemState,
   initializeCartState,
   ordersState,
   refreshCartState,
+  selectedPaymentProviderIdState,
   selectedShippingOptionIdState,
+  shippingAddressState,
   userInfoKeyState,
   userInfoState,
 } from "@/state";
 import { Product, UserInfo } from "@/types";
 import { getConfig } from "@/utils/template";
 import CONFIG from "@/config";
-import { authorize, createOrder, getAccessToken, getUserInfo, openChat } from "zmp-sdk/apis";
+import { authorize, getAccessToken, getUserInfo, openChat } from "zmp-sdk/apis";
 import { useAtomCallback } from "jotai/utils";
-import { authenticateWithZaloAccessToken } from "@/lib/medusa-sdk";
+import {
+  addShippingAddress,
+  addShippingMethod,
+  authenticateWithZaloAccessToken,
+  completeCart,
+  getCart,
+  initiateCartPaymentSession,
+  listCartPaymentProviders,
+  updateCartContact,
+} from "@/lib/medusa-sdk";
 
 type ZaloProfilePayload = {
   id?: string;
@@ -235,45 +246,93 @@ export function useToBeImplemented() {
 }
 
 export function useCheckout() {
-  const { totalAmount } = useAtomValue(cartTotalState);
+  const [cartId, setCartId] = useAtom(cartIdState);
   const [cart, setCart] = useAtom(cartState);
-  const [, setCartId] = useAtom(cartIdState);
+  const [selectedPaymentProviderId, setSelectedPaymentProviderId] = useAtom(
+    selectedPaymentProviderIdState
+  );
+  const selectedShippingOptionId = useAtomValue(selectedShippingOptionIdState);
+  const shippingAddress = useAtomValue(shippingAddressState);
   const setSelectedShippingOptionId = useSetAtom(selectedShippingOptionIdState);
   const setCartPricing = useSetAtom(cartPricingState);
+  const setCartError = useSetAtom(cartErrorState);
   const requestInfo = useRequestInformation();
   const navigate = useNavigate();
   const refreshNewOrders = useSetAtom(ordersState("pending"));
 
   return async () => {
     try {
-      await requestInfo();
-      await createOrder({
-        amount: totalAmount,
-        desc: "Thanh toán đơn hàng",
-        item: cart.map((item) => ({
-          id: item.product.id,
-          name: item.product.name,
-          price: item.product.price,
-          quantity: item.quantity,
-        })),
+      setCartError(null);
+      if (!cartId) {
+        throw new Error("Giỏ hàng chưa được khởi tạo.");
+      }
+      if (!cart.length) {
+        throw new Error("Giỏ hàng đang trống.");
+      }
+      if (!shippingAddress?.address || !shippingAddress?.name || !shippingAddress?.city) {
+        throw new Error("Vui lòng nhập địa chỉ nhận hàng trước khi thanh toán.");
+      }
+
+      const userInfo = await requestInfo();
+      const normalizedEmail = (userInfo.email || "").trim() || `${userInfo.id}@zalo.local`;
+      const normalizedPhone = (shippingAddress.phone || userInfo.phone || "").trim();
+      const nameParts = (shippingAddress.name || userInfo.name || "Khách hàng")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+
+      await updateCartContact(cartId, {
+        email: normalizedEmail,
       });
+
+      await addShippingAddress(cartId, {
+        first_name: nameParts[0] || "Khach",
+        last_name: nameParts.slice(1).join(" ") || "hàng",
+        address_1: shippingAddress.address,
+        city: shippingAddress.city,
+        country_code: "vn",
+        phone: normalizedPhone || undefined,
+      });
+
+      const latestCart = await getCart(cartId);
+      const hasShippingMethod = (latestCart.shipping_methods?.length || 0) > 0;
+      if (!hasShippingMethod) {
+        if (!selectedShippingOptionId) {
+          throw new Error("Vui lòng chọn phương thức vận chuyển.");
+        }
+        await addShippingMethod(cartId, selectedShippingOptionId);
+      }
+
+      let paymentProviderId = selectedPaymentProviderId;
+      if (!paymentProviderId) {
+        const providers = await listCartPaymentProviders(cartId);
+        paymentProviderId = providers[0]?.id;
+      }
+      if (!paymentProviderId) {
+        throw new Error("Không có phương thức thanh toán khả dụng.");
+      }
+
+      await initiateCartPaymentSession(cartId, paymentProviderId);
+      await completeCart(cartId);
+
       setCart([]);
       setCartId(null);
       setSelectedShippingOptionId(null);
+      setSelectedPaymentProviderId(null);
       setCartPricing(null);
       refreshNewOrders();
       navigate("/orders", {
         viewTransition: true,
       });
-      toast.success("Thanh toán thành công. Cảm ơn bạn đã mua hàng!", {
-        icon: "🎉",
-        duration: 5000,
-      });
+      toast.success("Đặt hàng thành công. Cảm ơn bạn đã mua hàng!");
     } catch (error) {
       console.warn(error);
-      toast.error(
-        "Thanh toán thất bại. Vui lòng kiểm tra nội dung lỗi bên trong Console."
-      );
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : "Thanh toán thất bại. Vui lòng thử lại.";
+      setCartError(message);
+      toast.error(message);
     }
   };
 }
