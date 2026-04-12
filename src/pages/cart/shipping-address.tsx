@@ -51,24 +51,6 @@ function ShippingAddressPage() {
               e.currentTarget.setCustomValidity("");
             }}
           />
-          <Input
-            name="city"
-            label={
-              <>
-                Thành phố <span className="text-danger">*</span>
-              </>
-            }
-            placeholder="Ví dụ: Hồ Chí Minh"
-            required
-            defaultValue={address?.city}
-            onInvalid={(e) => {
-              e.currentTarget.setCustomValidity("Vui lòng nhập thành phố");
-              e.currentTarget.reportValidity();
-            }}
-            onInput={(e) => {
-              e.currentTarget.setCustomValidity("");
-            }}
-          />
         </div>
         <div className="bg-section p-4 grid gap-4">
           <Input

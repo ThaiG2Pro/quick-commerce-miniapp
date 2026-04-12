@@ -26,7 +26,6 @@
     "pretty": true,
     "removeComments": true,
     "sourceMap": true,
-    "ignoreDeprecations": "6.0",
     "resolveJsonModule": true,
     "types": ["vite/client"],
     "baseUrl": ".",

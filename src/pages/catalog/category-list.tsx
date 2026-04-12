@@ -11,7 +11,7 @@ export default function CategoryListPage() {
         <TransitionLink
           key={category.id}
           className="flex flex-col items-center space-y-1 overflow-hidden cursor-pointer"
-          to={`/category/${category.handle}`}
+          to={`/category/${category.id}`}
         >
           <div className="px-1">
             <img

@@ -7,21 +7,12 @@ import { useNavigate } from "react-router-dom";
 
 function OrderSummary(props: { order: Order; full?: boolean }) {
   const navigate = useNavigate();
-  const displayedDate = props.order.receivedAt || props.order.createdAt;
-  const formattedDate = new Intl.DateTimeFormat("vi-VN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(displayedDate);
-
   return (
     <Section
       title={
         <div className="w-full flex justify-between items-center space-x-2 font-normal">
           <span className="text-xs truncate">
-            Thời gian nhận: {formattedDate}
+            Thời gian nhận: Từ 16h, 20/1/2025
           </span>
           <span
             className={`text-xs ${

@@ -1,7 +1,7 @@
 import { CartIcon, CategoryIcon, HomeIcon, PackageIcon } from "./vectors";
 import HorizontalDivider from "./horizontal-divider";
 import { useAtomValue } from "jotai";
-import { cartTotalState } from "@/state";
+import { cartState } from "@/state";
 import TransitionLink from "./transition-link";
 import { useRouteHandle } from "@/hooks";
 import Badge from "./badge";
@@ -26,10 +26,10 @@ const NAV_ITEMS = [
     name: "Giỏ hàng",
     path: "/cart",
     icon: (props) => {
-      const { totalItems } = useAtomValue(cartTotalState);
+      const cart = useAtomValue(cartState);
 
       return (
-        <Badge value={totalItems}>
+        <Badge value={cart.length}>
           <CartIcon {...props} />
         </Badge>
       );

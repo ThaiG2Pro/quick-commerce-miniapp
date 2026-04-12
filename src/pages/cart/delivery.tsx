@@ -11,18 +11,12 @@ import {
   ShipperIcon,
 } from "@/components/vectors";
 import {
-  cartMutatingState,
   deliveryModeState,
-  selectedShippingOptionIdState,
   selectedStationState,
-  selectShippingOptionState,
-  shippingOptionsState,
   shippingAddressState,
 } from "@/state";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Suspense, useEffect, useMemo } from "react";
-import { formatPrice } from "@/utils/format";
-import toast from "react-hot-toast";
+import { useAtom, useAtomValue } from "jotai";
+import { Suspense } from "react";
 import DeliverySummary from "./delivery-summary";
 
 function ShippingAddressSummary() {
@@ -104,104 +98,13 @@ function Delivery() {
       </div>
       <HorizontalDivider />
       {selectedDeliveryMode === "shipping" ? (
-        <>
-          <ShippingAddressSummary />
-          <Suspense fallback={<StationSkeleton />}>
-            <ShippingOptions />
-          </Suspense>
-        </>
+        <ShippingAddressSummary />
       ) : (
         <Suspense fallback={<StationSkeleton />}>
           <SelectedStationSummary />
         </Suspense>
       )}
     </Section>
-  );
-}
-
-function ShippingOptions() {
-  const shippingOptions = useAtomValue(shippingOptionsState);
-  const [selectedShippingOptionId, setSelectedShippingOptionId] = useAtom(
-    selectedShippingOptionIdState
-  );
-  const applyShippingOption = useSetAtom(selectShippingOptionState);
-  const cartMutating = useAtomValue(cartMutatingState);
-
-  const effectiveSelectedId = useMemo(() => {
-    if (
-      selectedShippingOptionId &&
-      shippingOptions.some((option) => option.id === selectedShippingOptionId)
-    ) {
-      return selectedShippingOptionId;
-    }
-    return shippingOptions[0]?.id;
-  }, [selectedShippingOptionId, shippingOptions]);
-
-  useEffect(() => {
-    if (selectedShippingOptionId || !shippingOptions.length || cartMutating) {
-      return;
-    }
-    applyShippingOption(shippingOptions[0].id)
-      .then(() => setSelectedShippingOptionId(shippingOptions[0].id))
-      .catch((error) => {
-        console.error("Failed to set default shipping option:", error);
-      });
-  }, [
-    applyShippingOption,
-    cartMutating,
-    selectedShippingOptionId,
-    setSelectedShippingOptionId,
-    shippingOptions,
-  ]);
-
-  if (!shippingOptions.length) {
-    return (
-      <div className="px-4 pb-4 text-xs text-subtitle">
-        Chưa có phương thức vận chuyển khả dụng cho giỏ hàng hiện tại.
-      </div>
-    );
-  }
-
-  return (
-    <div className="px-4 pb-4 space-y-2">
-      <div className="text-xs text-subtitle">Chọn phương thức vận chuyển</div>
-      <div className="space-y-2">
-        {shippingOptions.map((option) => {
-          const isSelected = option.id === effectiveSelectedId;
-          return (
-            <button
-              key={option.id}
-              className={`w-full text-left rounded-lg border px-3 py-2 ${
-                isSelected ? "border-primary bg-primary/5" : "border-black/10"
-              }`}
-              disabled={cartMutating}
-              onClick={async () => {
-                if (option.id === effectiveSelectedId) {
-                  return;
-                }
-                try {
-                  await applyShippingOption(option.id);
-                  setSelectedShippingOptionId(option.id);
-                } catch (error) {
-                  console.error("Failed to apply shipping option:", error);
-                  toast.error("Không thể áp dụng phương thức vận chuyển.");
-                }
-              }}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium">{option.name}</span>
-                <span className="text-sm">
-                  {formatPrice(option.amount, option.currencyCode)}
-                </span>
-              </div>
-              {option.description && (
-                <div className="mt-0.5 text-xs text-subtitle">{option.description}</div>
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 

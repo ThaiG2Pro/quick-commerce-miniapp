@@ -1,8 +1,7 @@
-export function formatPrice(price: number, currencyCode = "VND") {
-  const normalizedCurrency = currencyCode.toUpperCase();
+export function formatPrice(price: number) {
   return new Intl.NumberFormat("vi-VN", {
     style: "currency",
-    currency: normalizedCurrency,
+    currency: "VND",
     currencyDisplay: "code",
   }).format(price);
 }
