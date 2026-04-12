@@ -3,11 +3,10 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   categoriesStateUpwrapped,
   loadableUserInfoState,
-  userInfoState,
+  storefrontProfileStateUnwrapped,
 } from "@/state";
 import { useMemo } from "react";
 import { useRouteHandle } from "@/hooks";
-import { getConfig } from "@/utils/template";
 import headerIllus from "@/static/header-illus.svg";
 import SearchBar from "./search-bar";
 import TransitionLink from "./transition-link";
@@ -20,6 +19,7 @@ export default function Header() {
   const location = useLocation();
   const [handle, match] = useRouteHandle();
   const userInfo = useAtomValue(loadableUserInfoState);
+  const storefrontProfile = useAtomValue(storefrontProfileStateUnwrapped);
 
   const title = useMemo(() => {
     if (handle) {
@@ -44,18 +44,18 @@ export default function Header() {
         {handle?.logo ? (
           <>
             <img
-              src={getConfig((c) => c.template.logoUrl)}
+              src={storefrontProfile.logoUrl}
               className="flex-none w-8 h-8 rounded-full"
             />
             <TransitionLink to="/stations" className="flex-1 overflow-hidden">
               <div className="flex items-center space-x-1">
                 <h1 className="text-lg font-bold">
-                  {getConfig((c) => c.template.shopName)}
+                  {storefrontProfile.shopName}
                 </h1>
                 <Icon icon="zi-chevron-right" />
               </div>
               <p className="overflow-x-auto whitespace-nowrap text-2xs">
-                {getConfig((c) => c.template.shopAddress)}
+                {storefrontProfile.shopAddress}
               </p>
             </TransitionLink>
           </>

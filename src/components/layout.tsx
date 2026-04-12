@@ -1,13 +1,20 @@
 import { Outlet } from "react-router-dom";
 import Header from "./header";
 import Footer from "./footer";
-import { Suspense } from "react";
+import { Suspense, useEffect } from "react";
 import { PageSkeleton } from "./skeleton";
 import { Toaster } from "react-hot-toast";
 import { ScrollRestoration } from "./scroll-restoration";
 import FloatingCartPreview from "./floating-cart-preview";
+import { useInitializeCart } from "@/hooks";
 
 export default function Layout() {
+  const initializeCart = useInitializeCart();
+
+  useEffect(() => {
+    initializeCart();
+  }, [initializeCart]);
+
   return (
     <div className="w-screen h-screen flex flex-col bg-section text-foreground">
       <Header />

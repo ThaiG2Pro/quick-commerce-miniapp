@@ -17,7 +17,17 @@ export interface ProductItemProps {
 
 export default function ProductItem(props: ProductItemProps) {
   const [selected, setSelected] = useState(false);
-  const { addToCart, cartQuantity } = useAddToCart(props.product);
+  const { addToCart, cartQuantity, isPending, isPurchasable } = useAddToCart(
+    props.product
+  );
+  const hasPriceRange =
+    typeof props.product.priceMin === "number" &&
+    typeof props.product.priceMax === "number" &&
+    props.product.priceMin !== props.product.priceMax;
+  const inlineDiscountPercent = props.product.originalPrice
+    ? 100 -
+      Math.round((props.product.price * 100) / props.product.originalPrice)
+    : 0;
 
   return (
     <div
@@ -47,23 +57,45 @@ export default function ProductItem(props: ProductItemProps) {
                 <div className="text-xs h-9 line-clamp-2">
                   {props.product.name}
                 </div>
+                {props.product.type && (
+                  <div className="text-3xs text-subtitle mt-0.5 line-clamp-1">
+                    {props.product.type}
+                  </div>
+                )}
               </div>
               <div className="mt-0.5 text-sm font-bold text-primary truncate">
-                {formatPrice(props.product.price)}
+                {hasPriceRange
+                  ? `Từ ${formatPrice(
+                      props.product.priceMin,
+                      props.product.currencyCode
+                    )}`
+                  : formatPrice(props.product.price, props.product.currencyCode)}
               </div>
-              {props.product.originalPrice && (
+              {props.product.hasCampaignPrice && (
+                <div className="text-3xs text-primary mt-0.5">
+                  Giá theo chương trình khuyến mãi
+                </div>
+              )}
+              {props.product.maxDiscountPercent && (
+                <div className="text-3xs text-danger mt-0.5">
+                  Giảm đến {props.product.maxDiscountPercent}%
+                </div>
+              )}
+              {!isPurchasable && (
+                <div className="text-3xs text-danger mt-0.5">
+                  Hết hàng hoặc chưa có giá hợp lệ để mua
+                </div>
+              )}
+              {props.product.originalPrice && !hasPriceRange && (
                 <div className="text-3xs space-x-0.5 truncate">
                   <span className="text-subtitle line-through">
-                    {formatPrice(props.product.originalPrice)}
+                    {formatPrice(
+                      props.product.originalPrice,
+                      props.product.currencyCode
+                    )}
                   </span>
                   <span className="text-danger">
-                    -
-                    {100 -
-                      Math.round(
-                        (props.product.price * 100) /
-                          props.product.originalPrice
-                      )}
-                    %
+                    -{inlineDiscountPercent}%
                   </span>
                 </div>
               )}
@@ -83,8 +115,9 @@ export default function ProductItem(props: ProductItemProps) {
                 toast: true,
               });
             }}
+            disabled={isPending || !isPurchasable}
           >
-            Thêm vào giỏ
+            {isPurchasable ? "Thêm vào giỏ" : "Chưa sẵn sàng"}
           </Button>
         ) : (
           <QuantityInput value={cartQuantity} onChange={addToCart} />
