@@ -28,8 +28,6 @@ import { getConfig } from "@/utils/template";
 import {
   getLocation,
   getPhoneNumber,
-  getSetting,
-  getUserInfo,
 } from "zmp-sdk/apis";
 import { calculateDistance } from "./utils/location";
 import { formatDistant } from "./utils/format";
@@ -47,6 +45,7 @@ import {
   getLoyaltyProfile,
   getStoreBranches,
   getStorefrontProfile,
+  getOrder,
   getOrders,
   getCurrentCustomer,
   transformMedusaCustomerToUserInfo,
@@ -81,68 +80,53 @@ const DEFAULT_LOYALTY_PROFILE: LoyaltyProfile = {
 
 export const userInfoKeyState = atom(0);
 
-export const userInfoState = atom<Promise<UserInfo>>(async (get) => {
-  get(userInfoKeyState);
-
-  try {
-    await hydrateMedusaAuthFromStorage();
-  } catch (error) {
-    console.warn("Cannot hydrate Medusa auth before reading user info:", error);
+function readStoredUserInfo(): UserInfo | undefined {
+  const savedUserInfo = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
+  if (!savedUserInfo) {
+    return undefined;
   }
 
   try {
+    return JSON.parse(savedUserInfo) as UserInfo;
+  } catch (error) {
+    console.warn("Cannot parse stored user info:", error);
+    return undefined;
+  }
+}
+
+export const userInfoState = atom<Promise<UserInfo | undefined>>(async (get) => {
+  get(userInfoKeyState);
+  const storedUserInfo = readStoredUserInfo();
+  const hasStoredMedusaAuthToken = Boolean(
+    localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)
+  );
+
+  if (!hasStoredMedusaAuthToken) {
+    return storedUserInfo;
+  }
+
+  try {
+    await hydrateMedusaAuthFromStorage();
     const medusaCustomer = await getCurrentCustomer();
     const medusaUserInfo = transformMedusaCustomerToUserInfo(medusaCustomer);
     if (medusaUserInfo) {
-      const savedUserInfo = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
-      const parsedSavedUserInfo = savedUserInfo ? JSON.parse(savedUserInfo) as UserInfo : undefined;
       const mergedUserInfo: UserInfo = {
-        id: parsedSavedUserInfo?.id || medusaUserInfo.id || "",
-        name: parsedSavedUserInfo?.name || medusaUserInfo.name || "",
-        avatar: parsedSavedUserInfo?.avatar || medusaUserInfo.avatar || "",
-        phone: parsedSavedUserInfo?.phone || medusaUserInfo.phone || "",
-        email: parsedSavedUserInfo?.email || medusaUserInfo.email || "",
-        address: parsedSavedUserInfo?.address || medusaUserInfo.address || "",
+        id: storedUserInfo?.id || medusaUserInfo.id || "",
+        name: storedUserInfo?.name || medusaUserInfo.name || "",
+        avatar: storedUserInfo?.avatar || medusaUserInfo.avatar || "",
+        phone: storedUserInfo?.phone || medusaUserInfo.phone || "",
+        email: storedUserInfo?.email || medusaUserInfo.email || "",
+        address: storedUserInfo?.address || medusaUserInfo.address || "",
       };
 
       localStorage.setItem(CONFIG.STORAGE_KEYS.USER_INFO, JSON.stringify(mergedUserInfo));
       return mergedUserInfo;
     }
   } catch (error) {
-    console.warn("Cannot load Medusa customer profile, falling back to local user info:", error);
+    console.warn("Cannot load Medusa customer profile from stored token:", error);
   }
 
-  // Nếu người dùng đã chỉnh sửa thông tin tài khoản trước đó, sử dụng thông tin đã lưu trữ
-  const savedUserInfo = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
-  // Phía tích hợp có thể thay đổi logic này thành fetch từ server
-  // const savedUserInfo = await fetchUserInfo({ token: await getAccessToken() });
-  if (savedUserInfo) {
-    return JSON.parse(savedUserInfo);
-  }
-
-  const {
-    authSetting: {
-      "scope.userInfo": grantedUserInfo,
-      "scope.userPhonenumber": grantedPhoneNumber,
-    },
-  } = await getSetting({});
-  const isDev = !window.ZJSBridge;
-  if (grantedUserInfo || isDev) {
-    // Người dùng cho phép truy cập tên và ảnh đại diện
-    const { userInfo } = await getUserInfo({});
-    const phone =
-      grantedPhoneNumber || isDev // Người dùng cho phép truy cập số điện thoại
-        ? await get(phoneState)
-        : "";
-    return {
-      id: userInfo.id,
-      name: userInfo.name,
-      avatar: userInfo.avatar,
-      phone,
-      email: "",
-      address: "",
-    };
-  }
+  return storedUserInfo;
 });
 
 export const loadableUserInfoState = loadable(userInfoState);
@@ -384,6 +368,48 @@ export const addOrUpdateCartItemState = atom(
         typeof payload.quantity === "function"
           ? payload.quantity(currentQuantity)
           : payload.quantity;
+      const hasStoredMedusaAuthToken = Boolean(
+        localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)
+      );
+
+      if (!hasStoredMedusaAuthToken) {
+        if (newQuantity <= 0) {
+          set(
+            cartState,
+            cart.filter((item) =>
+              payload.product.variantId
+                ? item.product.variantId !== payload.product.variantId
+                : item.product.id !== payload.product.id
+            )
+          );
+          set(cartPricingState, null);
+          return;
+        }
+
+        if (existingItem) {
+          set(
+            cartState,
+            cart.map((item) =>
+              (payload.product.variantId
+                ? item.product.variantId === payload.product.variantId
+                : item.product.id === payload.product.id)
+                ? { ...item, quantity: newQuantity }
+                : item
+            )
+          );
+        } else {
+          set(cartState, [
+            ...cart,
+            {
+              product: payload.product,
+              quantity: newQuantity,
+            },
+          ]);
+        }
+        set(cartPricingState, null);
+        set(selectedShippingOptionIdState, null);
+        return;
+      }
 
       let currentCartId = get(cartIdState);
       if (!currentCartId) {
@@ -485,8 +511,13 @@ export const shippingOptionsState = atom(async (get) => {
   const options = await listCartShippingOptions(cartId);
   const calculatedPrices = await Promise.all(
     options.map(async (option) => {
-      if (option.price_type !== "calculated") {
-        return [option.id, option.amount] as const;
+      const optionPriceType = (option as { price_type?: string }).price_type;
+      const optionAmount =
+        (option as { amount?: number }).amount ??
+        (option as { price_incl_tax?: number }).price_incl_tax ??
+        (option as { price?: number }).price;
+      if (optionPriceType !== "calculated") {
+        return [option.id, optionAmount] as const;
       }
       try {
         const calculated = await calculateShippingOption(option.id, cartId);
@@ -776,6 +807,13 @@ export const shippingAddressState = atomWithStorage<
 
 export const ordersState = atomFamily((status: OrderStatus) =>
   atomWithRefresh(async () => {
+    const hasStoredMedusaAuthToken = Boolean(
+      localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)
+    );
+    if (!hasStoredMedusaAuthToken) {
+      return [];
+    }
+
     try {
       const medusaOrders = await getOrders({
         limit: 50,
@@ -787,35 +825,41 @@ export const ordersState = atomFamily((status: OrderStatus) =>
 
       return transformedOrders;
     } catch (error) {
-      console.warn("Cannot load orders from Medusa, fallback to mock orders:", error);
-      const allMockOrders = await requestWithFallback<Order[]>("/orders", []);
-      return allMockOrders.filter((order) => order.status === status);
+      console.error("Cannot load orders from Medusa:", error);
+      const statusCode = getErrorStatusCode(error);
+      if (statusCode === 401 || statusCode === 403) {
+        if (!hasStoredMedusaAuthToken) {
+          return [];
+        }
+        throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+      }
+      throw new Error("Không thể tải danh sách đơn hàng từ máy chủ.");
     }
   })
 );
 
-export const orderDetailState = atomFamily((orderId: number) =>
+export const orderDetailState = atomFamily((orderId: string) =>
   atomWithRefresh(async () => {
-    if (!Number.isFinite(orderId) || orderId <= 0) {
+    const normalizedOrderId = orderId.trim();
+    if (!normalizedOrderId) {
       return undefined as Order | undefined;
     }
 
     try {
-      const medusaOrders = await getOrders({
-        limit: 100,
-        offset: 0,
-      });
-      const transformedOrders = transformMedusaOrders(medusaOrders);
-      const matchedOrder = transformedOrders.find((order) => order.id === orderId);
-      if (matchedOrder) {
-        return matchedOrder;
-      }
+      const medusaOrder = await getOrder(normalizedOrderId);
+      const transformedOrders = transformMedusaOrders([medusaOrder]);
+      return transformedOrders[0];
     } catch (error) {
-      console.warn("Cannot load order detail from Medusa, fallback to mock orders:", error);
+      console.error("Cannot load order detail from Medusa:", error);
+      const statusCode = getErrorStatusCode(error);
+      if (statusCode === 401 || statusCode === 403) {
+        throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+      }
+      if (statusCode === 404) {
+        return undefined as Order | undefined;
+      }
+      throw new Error("Không thể tải chi tiết đơn hàng từ máy chủ.");
     }
-
-    const mockOrders = await requestWithFallback<Order[]>("/orders", []);
-    return mockOrders.find((order) => order.id === orderId);
   })
 );
 

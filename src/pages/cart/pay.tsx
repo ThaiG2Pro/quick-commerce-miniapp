@@ -24,7 +24,6 @@ export default function Pay() {
   } = useAtomValue(cartTotalState);
   const cartMutating = useAtomValue(cartMutatingState);
   const cartInitializing = useAtomValue(cartInitializingState);
-  const selectedPaymentProviderId = useAtomValue(selectedPaymentProviderIdState);
   const checkout = useCheckout();
   const [paying, setPaying] = useState(false);
 
@@ -88,7 +87,7 @@ export default function Pay() {
               setPaying(false);
             }
           }}
-          disabled={paying || cartMutating || cartInitializing || !selectedPaymentProviderId}
+          disabled={paying || cartMutating || cartInitializing}
         >
           {paying ? "Đang xử lý..." : "Thanh toán"}
         </Button>

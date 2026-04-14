@@ -15,6 +15,18 @@ function OrderList(props: { ordersState: Atom<Promise<Order[]>> }) {
     return <EmptyOrder />;
   }
 
+  if (orderList.state === "hasError") {
+    return (
+      <div className="space-y-2 p-4">
+        <div className="rounded-lg bg-danger/10 text-danger text-sm px-3 py-2">
+          {orderList.error instanceof Error
+            ? orderList.error.message
+            : "Không thể tải danh sách đơn hàng."}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2 p-4">
       {orderList.state !== "hasData" ? (

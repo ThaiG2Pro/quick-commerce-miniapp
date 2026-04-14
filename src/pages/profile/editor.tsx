@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { Button, Input } from "zmp-ui";
 import { updateCurrentCustomer } from "@/lib/medusa-sdk";
+import { useRequestInformation } from "@/hooks";
 
 function splitName(value: string) {
   const normalized = value.trim().replace(/\s+/g, " ");
@@ -27,6 +28,7 @@ function splitName(value: string) {
 function ProfileEditorPage() {
   const navigate = useNavigate();
   const userInfo = useAtomValue(userInfoState);
+  const requestInfo = useRequestInformation();
   const setUserInfoKey = useSetAtom(userInfoKeyState);
   const refreshUserInfo = () => setUserInfoKey((key) => key + 1);
   const [saving, setSaving] = useState(false);
@@ -46,15 +48,39 @@ function ProfileEditorPage() {
         setSaving(true);
         try {
           try {
-            await updateCurrentCustomer({
-              first_name: nameParts.first_name || undefined,
-              last_name: nameParts.last_name || undefined,
-              email: email || undefined,
-              phone: phone || undefined,
-              metadata: {
-                address,
-              },
-            });
+            await requestInfo();
+            try {
+              await updateCurrentCustomer({
+                first_name: nameParts.first_name || undefined,
+                last_name: nameParts.last_name || undefined,
+                email: email || undefined,
+                phone: phone || undefined,
+                metadata: {
+                  address,
+                },
+              });
+            } catch (error) {
+              const status =
+                typeof error === "object" && error !== null
+                  ? ((error as { status?: number; response?: { status?: number } }).status ||
+                    (error as { status?: number; response?: { status?: number } }).response
+                      ?.status)
+                  : undefined;
+              if (status === 401 || status === 403) {
+                await requestInfo();
+                await updateCurrentCustomer({
+                  first_name: nameParts.first_name || undefined,
+                  last_name: nameParts.last_name || undefined,
+                  email: email || undefined,
+                  phone: phone || undefined,
+                  metadata: {
+                    address,
+                  },
+                });
+              } else {
+                throw error;
+              }
+            }
           } catch (error) {
             console.warn("Cannot update Medusa customer profile, fallback to local save:", error);
           }

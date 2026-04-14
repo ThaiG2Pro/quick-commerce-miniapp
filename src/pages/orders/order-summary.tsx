@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 
 function OrderSummary(props: { order: Order; full?: boolean }) {
   const navigate = useNavigate();
+  const detailOrderId = props.order.medusaId || String(props.order.id);
   const displayedDate = props.order.receivedAt || props.order.createdAt;
   const formattedDate = new Intl.DateTimeFormat("vi-VN", {
     hour: "2-digit",
@@ -43,7 +44,7 @@ function OrderSummary(props: { order: Order; full?: boolean }) {
       className="flex-1 overflow-y-auto rounded-lg"
       onClick={() => {
         if (!props.full) {
-          navigate(`/order/${props.order.id}`, {
+          navigate(`/order/${encodeURIComponent(detailOrderId)}`, {
             state: props.order,
             viewTransition: true,
           });

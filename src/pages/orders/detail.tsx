@@ -11,11 +11,11 @@ import { EmptyOrder } from "@/components/empty";
 function OrderDetailPage() {
   const { id } = useParams();
   const { state } = useLocation();
-  const routeOrderId = Number(id);
+  const routeOrderId = id || "";
   const orderFromRouteState = state as Order | undefined;
   const orderFromStore = useAtomValue(
     useMemo(
-      () => loadable(orderDetailState(Number.isFinite(routeOrderId) ? routeOrderId : -1)),
+      () => loadable(orderDetailState(routeOrderId)),
       [routeOrderId]
     )
   );
@@ -26,6 +26,16 @@ function OrderDetailPage() {
 
   if (!order && orderFromStore.state === "loading") {
     return <div className="w-full p-4 text-sm text-subtitle">Đang tải đơn hàng...</div>;
+  }
+
+  if (!order && orderFromStore.state === "hasError") {
+    return (
+      <div className="w-full p-4 text-sm text-danger">
+        {orderFromStore.error instanceof Error
+          ? orderFromStore.error.message
+          : "Không thể tải chi tiết đơn hàng."}
+      </div>
+    );
   }
 
   if (!order) {

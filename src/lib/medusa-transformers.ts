@@ -361,6 +361,7 @@ export function transformMedusaOrders(orders: any[]): Order[] {
 
     return {
       id: hashId(String(order?.id || order?.display_id || Date.now())),
+      medusaId: typeof order?.id === "string" ? order.id : undefined,
       status: mapOrderStatus(order),
       paymentStatus: mapPaymentStatus(order),
       createdAt,

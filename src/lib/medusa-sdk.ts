@@ -6,13 +6,19 @@ import CONFIG from "@/config";
 const MEDUSA_BACKEND_URL = import.meta.env.VITE_MEDUSA_BACKEND_URL || "http://localhost:9000";
 const MEDUSA_PUBLISHABLE_KEY = import.meta.env.VITE_MEDUSA_PUBLISHABLE_KEY || "";
 
+if (!MEDUSA_PUBLISHABLE_KEY && typeof window !== "undefined") {
+  console.warn(
+    "VITE_MEDUSA_PUBLISHABLE_KEY is empty. Store APIs may fail with 400 missing x-publishable-api-key."
+  );
+}
+
 // Khởi tạo Medusa SDK client
 export const sdk = new Medusa({
   baseUrl: MEDUSA_BACKEND_URL,
   debug: import.meta.env.DEV,
   publishableKey: MEDUSA_PUBLISHABLE_KEY,
   auth: {
-    type: "session", // hoặc "jwt" tùy vào cấu hình backend
+    type: "jwt",
   },
 });
 
@@ -269,9 +275,7 @@ export async function addShippingMethod(
  */
 export async function listCartShippingOptions(cartId: string) {
   try {
-    const response = await sdk.store.fulfillment.listCartOptions({
-      cart_id: cartId,
-    });
+    const response = await sdk.store.cart.listShippingOptions(cartId);
     return response.shipping_options;
   } catch (error) {
     console.error("Error fetching cart shipping options:", error);
@@ -282,16 +286,29 @@ export async function listCartShippingOptions(cartId: string) {
 /**
  * Lấy danh sách payment providers khả dụng dựa theo region của cart.
  */
-export async function listCartPaymentProviders(cartId: string) {
+export async function listCartPaymentProviders(cartId: string, regionId?: string) {
   try {
-    const cartResponse = await sdk.store.cart.retrieve(cartId);
-    const regionId = cartResponse.cart?.region?.id;
-    if (!regionId) {
+    const cartWithProviders = await sdk.store.cart.retrieve(cartId, {
+      fields: "+payment_providers",
+    });
+    const embeddedProviders =
+      (cartWithProviders.cart as { payment_providers?: Array<{ id: string; name?: string }> })
+        .payment_providers || [];
+    if (embeddedProviders.length > 0) {
+      return embeddedProviders;
+    }
+
+    let resolvedRegionId = regionId;
+    if (!resolvedRegionId) {
+      const cartResponse = await sdk.store.cart.retrieve(cartId);
+      resolvedRegionId = cartResponse.cart?.region?.id;
+    }
+    if (!resolvedRegionId) {
       return [];
     }
 
     const response = await sdk.store.payment.listPaymentProviders({
-      region_id: regionId,
+      region_id: resolvedRegionId,
     });
     return response.payment_providers || [];
   } catch (error) {
@@ -301,25 +318,32 @@ export async function listCartPaymentProviders(cartId: string) {
 }
 
 /**
- * Khởi tạo payment session cho cart với provider đã chọn.
+ * Khởi tạo payment sessions cho cart.
  */
-export async function initiateCartPaymentSession(
+export async function initializeCartPaymentSessions(cartId: string) {
+  try {
+    const response = await sdk.store.cart.initializePaymentSession(cartId);
+    return response.cart;
+  } catch (error) {
+    console.error("Error initializing cart payment sessions:", error);
+    throw error;
+  }
+}
+
+/**
+ * Chọn payment session cho cart theo provider.
+ */
+export async function setCartPaymentSession(
   cartId: string,
-  providerId: string,
-  data?: Record<string, unknown>
+  providerId: string
 ) {
   try {
-    const cartResponse = await sdk.store.cart.retrieve(cartId);
-    const response = await sdk.store.payment.initiatePaymentSession(
-      cartResponse.cart,
-      {
-        provider_id: providerId,
-        ...(data ? { data } : {}),
-      }
-    );
-    return response.payment_collection;
+    const response = await sdk.store.cart.setPaymentSession(cartId, {
+      provider_id: providerId,
+    });
+    return response.cart;
   } catch (error) {
-    console.error("Error initiating cart payment session:", error);
+    console.error("Error setting cart payment session:", error);
     throw error;
   }
 }
@@ -733,6 +757,10 @@ export async function getStorefrontProfile(): Promise<StorefrontProfile | null> 
     console.warn("Custom storefront profile endpoint unavailable:", error);
   }
 
+  if (!MEDUSA_PUBLISHABLE_KEY) {
+    return null;
+  }
+
   try {
     const storeResponse = await sdk.client.fetch<{
       store?: unknown;
@@ -814,11 +842,15 @@ export async function authenticateWithZaloAccessToken(accessToken: string) {
     });
 
     const authToken = response.jwt || response.token || response.accessToken;
-    if (authToken) {
-      await sdk.client.setToken(authToken);
-      if (typeof window !== "undefined") {
-        localStorage.setItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN, authToken);
-      }
+    if (!authToken) {
+      throw new Error(
+        "Auth response missing token/jwt/accessToken. Cannot call user-scoped Store APIs."
+      );
+    }
+
+    await sdk.client.setToken(authToken);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN, authToken);
     }
 
     return response;

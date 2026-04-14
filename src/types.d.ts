@@ -125,6 +125,7 @@ export type PaymentStatus = "pending" | "success" | "failed";
 
 export interface Order {
   id: number;
+  medusaId?: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   createdAt: Date;

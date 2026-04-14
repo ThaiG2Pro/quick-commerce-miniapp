@@ -30,14 +30,19 @@ import CONFIG from "@/config";
 import { authorize, getAccessToken, getUserInfo, openChat } from "zmp-sdk/apis";
 import { useAtomCallback } from "jotai/utils";
 import {
+  addToCart as addLineItem,
+  createCart,
   addShippingAddress,
   addShippingMethod,
   authenticateWithZaloAccessToken,
   completeCart,
   getCurrentCustomer,
   getCart,
-  initiateCartPaymentSession,
+  getRegions,
+  initializeCartPaymentSessions,
   listCartPaymentProviders,
+  listCartShippingOptions,
+  setCartPaymentSession,
   transformMedusaCustomerToUserInfo,
   updateCartContact,
 } from "@/lib/medusa-sdk";
@@ -116,6 +121,46 @@ function getCartMutationErrorMessage(error: unknown) {
   return "Không thể cập nhật giỏ hàng";
 }
 
+function getErrorStatusCode(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  const candidate = error as {
+    status?: number;
+    response?: { status?: number };
+  };
+  return candidate.status || candidate.response?.status;
+}
+
+function isIdentityRequiredError(error: unknown) {
+  const status = getErrorStatusCode(error);
+  if (status === 401 || status === 403) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return /customer_id/i.test(error.message);
+}
+
+async function withSingleAuthRetry<T>(
+  operation: () => Promise<T>,
+  reauthenticate: () => Promise<void>
+) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isIdentityRequiredError(error)) {
+      throw error;
+    }
+    await reauthenticate();
+    return await operation();
+  }
+}
+
 export function useRealHeight(
   element: MutableRefObject<HTMLDivElement | null>,
   defaultValue?: number
@@ -147,96 +192,100 @@ export function useRequestInformation() {
   const setInfoKey = useSetAtom(userInfoKeyState);
   const refreshPermissions = () => setInfoKey((key) => key + 1);
 
-  const refreshMedusaCustomerProfile = async (baseUserInfo: UserInfo) => {
-    const storedAuthToken = localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN);
-    if (storedAuthToken) {
-      try {
-        const medusaCustomer = await getCurrentCustomer();
-        const medusaUserInfo = transformMedusaCustomerToUserInfo(medusaCustomer);
-
-        if (!medusaUserInfo) {
-          return baseUserInfo;
-        }
-
-        const mergedUserInfo: UserInfo = {
-          id: medusaUserInfo.id || baseUserInfo.id,
-          name: medusaUserInfo.name || baseUserInfo.name,
-          avatar: medusaUserInfo.avatar || baseUserInfo.avatar,
-          phone: medusaUserInfo.phone || baseUserInfo.phone,
-          email: medusaUserInfo.email || baseUserInfo.email,
-          address: medusaUserInfo.address || baseUserInfo.address,
-        };
-
-        localStorage.setItem(
-          CONFIG.STORAGE_KEYS.USER_INFO,
-          JSON.stringify(mergedUserInfo)
-        );
-
-        return mergedUserInfo;
-      } catch (error) {
-        console.warn("Cannot refresh Medusa customer profile from stored token:", error);
-        return baseUserInfo;
-      }
+  const loginWithZalo = async () => {
+    let accessToken = await getAccessToken();
+    if (!accessToken) {
+      await authorize({
+        scopes: ["scope.userInfo", "scope.userPhonenumber"],
+      });
+      refreshPermissions();
+      accessToken = await getAccessToken();
     }
 
-    const accessToken = await getAccessToken();
     if (!accessToken) {
-      return baseUserInfo;
+      throw new Error("Không thể lấy access token từ Zalo.");
     }
 
     const authResponse = await authenticateWithZaloAccessToken(accessToken);
+    const refreshedUserInfo = await getStoredUserInfo();
+    const fallbackUserInfo: UserInfo =
+      refreshedUserInfo ||
+      (await getUserInfo({}).then(({ userInfo: profile }) => ({
+        id: profile.id || "",
+        name: profile.name || "",
+        avatar: profile.avatar || "",
+        phone: "",
+        email: "",
+        address: "",
+      })));
+
     const normalizedUserInfo = normalizeUserInfo(
       authResponse as ZaloAuthResponse,
-      baseUserInfo
+      fallbackUserInfo
     );
 
     localStorage.setItem(
       CONFIG.STORAGE_KEYS.USER_INFO,
       JSON.stringify(normalizedUserInfo)
     );
-
+    refreshPermissions();
     return normalizedUserInfo;
+  };
+
+  const refreshMedusaCustomerProfile = async (baseUserInfo: UserInfo) => {
+    const storedAuthToken = localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN);
+    if (!storedAuthToken) {
+      return baseUserInfo;
+    }
+
+    try {
+      const medusaCustomer = await getCurrentCustomer();
+      const medusaUserInfo = transformMedusaCustomerToUserInfo(medusaCustomer);
+
+      if (!medusaUserInfo) {
+        return baseUserInfo;
+      }
+
+      const mergedUserInfo: UserInfo = {
+        id: medusaUserInfo.id || baseUserInfo.id,
+        name: medusaUserInfo.name || baseUserInfo.name,
+        avatar: medusaUserInfo.avatar || baseUserInfo.avatar,
+        phone: medusaUserInfo.phone || baseUserInfo.phone,
+        email: medusaUserInfo.email || baseUserInfo.email,
+        address: medusaUserInfo.address || baseUserInfo.address,
+      };
+
+      localStorage.setItem(
+        CONFIG.STORAGE_KEYS.USER_INFO,
+        JSON.stringify(mergedUserInfo)
+      );
+
+      return mergedUserInfo;
+    } catch (error) {
+      console.warn("Cannot refresh Medusa customer profile from stored token:", error);
+      return baseUserInfo;
+    }
   };
 
   return async () => {
     const userInfo = await getStoredUserInfo();
+    const storedAuthToken = localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN);
+    if (!storedAuthToken) {
+      return await loginWithZalo();
+    }
+
     if (!userInfo) {
-      await authorize({
-        scopes: ["scope.userInfo", "scope.userPhonenumber"],
-      }).then(refreshPermissions);
-
-      const accessToken = await getAccessToken();
-      const authResponse = await authenticateWithZaloAccessToken(accessToken);
-      const refreshedUserInfo = await getStoredUserInfo();
-      const fallbackUserInfo: UserInfo =
-        refreshedUserInfo ||
-        (await getUserInfo({}).then(({ userInfo: profile }) => ({
-          id: profile.id || "",
-          name: profile.name || "",
-          avatar: profile.avatar || "",
-          phone: "",
-          email: "",
-          address: "",
-        })));
-
-      const normalizedUserInfo = normalizeUserInfo(
-        authResponse as ZaloAuthResponse,
-        fallbackUserInfo
-      );
-
-      localStorage.setItem(
-        CONFIG.STORAGE_KEYS.USER_INFO,
-        JSON.stringify(normalizedUserInfo)
-      );
-      refreshPermissions();
-      return normalizedUserInfo;
+      return await loginWithZalo();
     }
 
     try {
       return await refreshMedusaCustomerProfile(userInfo);
     } catch (error) {
-      console.warn("Cannot refresh Medusa customer profile from Zalo token:", error);
-      return userInfo;
+      if (!isIdentityRequiredError(error)) {
+        console.warn("Cannot refresh Medusa customer profile from Zalo token:", error);
+        return userInfo;
+      }
+      return await loginWithZalo();
     }
   };
 }
@@ -336,11 +385,33 @@ export function useCheckout() {
   const refreshNewOrders = useSetAtom(ordersState("pending"));
 
   return async () => {
+    async function ensureServerCartFromGuestCart(currentCartId: string | null) {
+      if (currentCartId) {
+        return currentCartId;
+      }
+
+      const regions = await getRegions();
+      const defaultRegionId = regions[0]?.id;
+      const createdCart = await createCart(defaultRegionId);
+      let activeCart = createdCart;
+
+      for (const item of cart) {
+        if (!item.product.variantId || item.quantity <= 0) {
+          continue;
+        }
+        activeCart = await addLineItem(
+          activeCart.id,
+          item.product.variantId,
+          item.quantity
+        );
+      }
+
+      setCartId(activeCart.id);
+      return activeCart.id;
+    }
+
     try {
       setCartError(null);
-      if (!cartId) {
-        throw new Error("Giỏ hàng chưa được khởi tạo.");
-      }
       if (!cart.length) {
         throw new Error("Giỏ hàng đang trống.");
       }
@@ -348,47 +419,67 @@ export function useCheckout() {
         throw new Error("Vui lòng nhập địa chỉ nhận hàng trước khi thanh toán.");
       }
 
-      const userInfo = await requestInfo();
-      const normalizedEmail = (userInfo.email || "").trim() || `${userInfo.id}@zalo.local`;
-      const normalizedPhone = (shippingAddress.phone || userInfo.phone || "").trim();
-      const nameParts = (shippingAddress.name || userInfo.name || "Khách hàng")
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean);
+      await withSingleAuthRetry(
+        async () => {
+          const userInfo = await requestInfo();
+          const activeCartId = await ensureServerCartFromGuestCart(cartId);
+          const normalizedEmail =
+            (userInfo.email || "").trim() || `${userInfo.id}@zalo.local`;
+          const normalizedPhone = (shippingAddress.phone || userInfo.phone || "").trim();
+          const nameParts = (shippingAddress.name || userInfo.name || "Khách hàng")
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean);
 
-      await updateCartContact(cartId, {
-        email: normalizedEmail,
-      });
+          await updateCartContact(activeCartId, {
+            email: normalizedEmail,
+          });
 
-      await addShippingAddress(cartId, {
-        first_name: nameParts[0] || "Khach",
-        last_name: nameParts.slice(1).join(" ") || "hàng",
-        address_1: shippingAddress.address,
-        city: shippingAddress.city,
-        country_code: "vn",
-        phone: normalizedPhone || undefined,
-      });
+          await addShippingAddress(activeCartId, {
+            first_name: nameParts[0] || "Khach",
+            last_name: nameParts.slice(1).join(" ") || "hàng",
+            address_1: shippingAddress.address,
+            city: shippingAddress.city,
+            country_code: "vn",
+            phone: normalizedPhone || undefined,
+          });
 
-      const latestCart = await getCart(cartId);
-      const hasShippingMethod = (latestCart.shipping_methods?.length || 0) > 0;
-      if (!hasShippingMethod) {
-        if (!selectedShippingOptionId) {
-          throw new Error("Vui lòng chọn phương thức vận chuyển.");
+          let checkoutCart = await getCart(activeCartId);
+          const hasShippingMethod = (checkoutCart.shipping_methods?.length || 0) > 0;
+          if (!hasShippingMethod) {
+            let shippingOptionId = selectedShippingOptionId;
+            if (!shippingOptionId) {
+              const options = await listCartShippingOptions(activeCartId);
+              shippingOptionId = options[0]?.id;
+            }
+            if (!shippingOptionId) {
+              throw new Error("Không có phương thức vận chuyển khả dụng.");
+            }
+
+            checkoutCart = await addShippingMethod(activeCartId, shippingOptionId);
+            setSelectedShippingOptionId(shippingOptionId);
+          }
+
+          let paymentProviderId = selectedPaymentProviderId;
+          if (!paymentProviderId) {
+            const providers = await listCartPaymentProviders(
+              activeCartId,
+              checkoutCart.region?.id
+            );
+            paymentProviderId = providers[0]?.id;
+          }
+          if (!paymentProviderId) {
+            throw new Error("Không có phương thức thanh toán khả dụng.");
+          }
+
+          await initializeCartPaymentSessions(activeCartId);
+          await setCartPaymentSession(activeCartId, paymentProviderId);
+          await completeCart(activeCartId);
+        },
+        async () => {
+          await requestInfo();
         }
-        await addShippingMethod(cartId, selectedShippingOptionId);
-      }
-
-      let paymentProviderId = selectedPaymentProviderId;
-      if (!paymentProviderId) {
-        const providers = await listCartPaymentProviders(cartId);
-        paymentProviderId = providers[0]?.id;
-      }
-      if (!paymentProviderId) {
-        throw new Error("Không có phương thức thanh toán khả dụng.");
-      }
-
-      await initiateCartPaymentSession(cartId, paymentProviderId);
-      await completeCart(cartId);
+      );
 
       setCart([]);
       setCartId(null);
