@@ -737,7 +737,7 @@ function parseLoyaltyProfile(source: unknown): LoyaltyProfile | null {
 
 /**
  * Lấy thông tin branding của storefront từ Medusa.
- * Ưu tiên custom route `/store/storefront-profile`, fallback về `/store/store`.
+ * Chỉ gọi custom route `/store/storefront-profile` để tránh fallback sang route không tồn tại.
  */
 export async function getStorefrontProfile(): Promise<StorefrontProfile | null> {
   try {
@@ -756,20 +756,7 @@ export async function getStorefrontProfile(): Promise<StorefrontProfile | null> 
   } catch (error) {
     console.warn("Custom storefront profile endpoint unavailable:", error);
   }
-
-  if (!MEDUSA_PUBLISHABLE_KEY) {
-    return null;
-  }
-
-  try {
-    const storeResponse = await sdk.client.fetch<{
-      store?: unknown;
-    }>("/store/store");
-    return parseStorefrontProfile(storeResponse.store);
-  } catch (error) {
-    console.warn("Default store endpoint unavailable:", error);
-    return null;
-  }
+  return null;
 }
 
 /**
@@ -874,6 +861,19 @@ export async function hydrateMedusaAuthFromStorage() {
   }
 
   await sdk.client.setToken(token);
+  return true;
+}
+
+/**
+ * Xóa token customer đã lưu khi phiên auth không còn hợp lệ.
+ */
+export async function clearMedusaAuthFromStorage() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  localStorage.removeItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN);
+  sdk.client.clearToken();
   return true;
 }
 

@@ -33,6 +33,7 @@ import { calculateDistance } from "./utils/location";
 import { formatDistant } from "./utils/format";
 import CONFIG from "./config";
 import {
+  clearMedusaAuthFromStorage,
   applyPromotionCodes,
   addToCart as addLineItem,
   addShippingMethod as addCartShippingMethod,
@@ -123,6 +124,10 @@ export const userInfoState = atom<Promise<UserInfo | undefined>>(async (get) => 
       return mergedUserInfo;
     }
   } catch (error) {
+    if (isAuthError(error)) {
+      await clearMedusaAuthFromStorage();
+      return storedUserInfo;
+    }
     console.warn("Cannot load Medusa customer profile from stored token:", error);
   }
 
@@ -280,6 +285,11 @@ function getErrorMessage(error: unknown, fallbackMessage: string) {
   return fallbackMessage;
 }
 
+function isAuthError(error: unknown) {
+  const status = getErrorStatusCode(error);
+  return status === 401 || status === 403;
+}
+
 export const initializeCartState = atom(null, async (get, set) => {
   const cartId = get(cartIdState);
   if (!cartId) {
@@ -368,10 +378,10 @@ export const addOrUpdateCartItemState = atom(
         typeof payload.quantity === "function"
           ? payload.quantity(currentQuantity)
           : payload.quantity;
+
       const hasStoredMedusaAuthToken = Boolean(
         localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)
       );
-
       if (!hasStoredMedusaAuthToken) {
         if (newQuantity <= 0) {
           set(
@@ -807,10 +817,7 @@ export const shippingAddressState = atomWithStorage<
 
 export const ordersState = atomFamily((status: OrderStatus) =>
   atomWithRefresh(async () => {
-    const hasStoredMedusaAuthToken = Boolean(
-      localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)
-    );
-    if (!hasStoredMedusaAuthToken) {
+    if (!localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)) {
       return [];
     }
 
@@ -828,10 +835,8 @@ export const ordersState = atomFamily((status: OrderStatus) =>
       console.error("Cannot load orders from Medusa:", error);
       const statusCode = getErrorStatusCode(error);
       if (statusCode === 401 || statusCode === 403) {
-        if (!hasStoredMedusaAuthToken) {
-          return [];
-        }
-        throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        await clearMedusaAuthFromStorage();
+        return [];
       }
       throw new Error("Không thể tải danh sách đơn hàng từ máy chủ.");
     }
@@ -853,7 +858,8 @@ export const orderDetailState = atomFamily((orderId: string) =>
       console.error("Cannot load order detail from Medusa:", error);
       const statusCode = getErrorStatusCode(error);
       if (statusCode === 401 || statusCode === 403) {
-        throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        await clearMedusaAuthFromStorage();
+        return undefined as Order | undefined;
       }
       if (statusCode === 404) {
         return undefined as Order | undefined;

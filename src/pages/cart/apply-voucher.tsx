@@ -6,6 +6,7 @@ import {
   cartTotalState,
   removePromotionCodeState,
 } from "@/state";
+import { isIdentityRequiredError, useRequestInformation } from "@/hooks";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useState } from "react";
 import toast from "react-hot-toast";
@@ -17,6 +18,7 @@ export default function ApplyVoucher() {
   const promotionMutating = useAtomValue(cartPromotionMutatingState);
   const applyPromotion = useSetAtom(applyPromotionCodeState);
   const removePromotion = useSetAtom(removePromotionCodeState);
+  const requestInfo = useRequestInformation();
 
   return (
     <Section title="Chọn mã giảm giá" className="rounded-lg">
@@ -43,6 +45,19 @@ export default function ApplyVoucher() {
                 toast.success("Áp dụng mã thành công");
                 setPromoCode("");
               } catch (error) {
+                if (isIdentityRequiredError(error)) {
+                  try {
+                    await requestInfo();
+                    await applyPromotion(promoCode);
+                    toast.success("Áp dụng mã thành công");
+                    setPromoCode("");
+                    return;
+                  } catch (retryError) {
+                    console.error(retryError);
+                    toast.error("Mã giảm giá không hợp lệ hoặc không áp dụng được");
+                    return;
+                  }
+                }
                 console.error(error);
                 toast.error("Mã giảm giá không hợp lệ hoặc không áp dụng được");
               }

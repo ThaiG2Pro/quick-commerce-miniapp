@@ -30,12 +30,13 @@ import CONFIG from "@/config";
 import { authorize, getAccessToken, getUserInfo, openChat } from "zmp-sdk/apis";
 import { useAtomCallback } from "jotai/utils";
 import {
-  addToCart as addLineItem,
-  createCart,
   addShippingAddress,
+  addToCart as addLineItem,
   addShippingMethod,
+  clearMedusaAuthFromStorage,
   authenticateWithZaloAccessToken,
   completeCart,
+  createCart,
   getCurrentCustomer,
   getCart,
   getRegions,
@@ -133,17 +134,48 @@ function getErrorStatusCode(error: unknown): number | undefined {
   return candidate.status || candidate.response?.status;
 }
 
-function isIdentityRequiredError(error: unknown) {
+function getErrorMessageText(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (typeof error !== "object" || error === null) {
+    return "";
+  }
+
+  const candidate = error as {
+    message?: unknown;
+    response?: {
+      data?: { message?: unknown };
+      message?: unknown;
+    };
+  };
+
+  const directMessage = candidate.message;
+  if (typeof directMessage === "string") {
+    return directMessage;
+  }
+
+  const responseMessage = candidate.response?.data?.message || candidate.response?.message;
+  if (typeof responseMessage === "string") {
+    return responseMessage;
+  }
+
+  return "";
+}
+
+export function isIdentityRequiredError(error: unknown) {
   const status = getErrorStatusCode(error);
   if (status === 401 || status === 403) {
     return true;
   }
 
-  if (!(error instanceof Error)) {
-    return false;
+  const message = getErrorMessageText(error).toLowerCase();
+  if (status === 400 && message.includes("customer_id")) {
+    return true;
   }
 
-  return /customer_id/i.test(error.message);
+  return /customer_id/i.test(message);
 }
 
 async function withSingleAuthRetry<T>(
@@ -262,6 +294,10 @@ export function useRequestInformation() {
 
       return mergedUserInfo;
     } catch (error) {
+      if (isIdentityRequiredError(error)) {
+        await clearMedusaAuthFromStorage();
+        throw error;
+      }
       console.warn("Cannot refresh Medusa customer profile from stored token:", error);
       return baseUserInfo;
     }
@@ -294,6 +330,7 @@ export function useAddToCart(product: Product) {
   const cart = useAtomValue(cartState);
   const mutateCartItem = useSetAtom(addOrUpdateCartItemState);
   const isPending = useAtomValue(cartMutatingState);
+  const requestInfo = useRequestInformation();
 
   const currentCartItem = useMemo(
     () =>
@@ -323,11 +360,28 @@ export function useAddToCart(product: Product) {
           toast.success("Đã thêm vào giỏ hàng");
         }
       } catch (error) {
+        if (isIdentityRequiredError(error)) {
+          try {
+            await requestInfo();
+            await mutateCartItem({
+              product,
+              quantity,
+            });
+            if (options?.toast) {
+              toast.success("Đã thêm vào giỏ hàng");
+            }
+            return;
+          } catch (retryError) {
+            console.error("Add to cart failed after login retry:", retryError);
+            toast.error(getCartMutationErrorMessage(retryError));
+            return;
+          }
+        }
         console.error("Add to cart failed:", error);
         toast.error(getCartMutationErrorMessage(error));
       }
     },
-    [mutateCartItem, product]
+    [mutateCartItem, product, requestInfo]
   );
 
   return {
@@ -392,9 +446,13 @@ export function useCheckout() {
 
       const regions = await getRegions();
       const defaultRegionId = regions[0]?.id;
-      const createdCart = await createCart(defaultRegionId);
-      let activeCart = createdCart;
+      if (!defaultRegionId) {
+        throw new Error(
+          "No available Medusa region. Please configure at least one store region."
+        );
+      }
 
+      let activeCart = await createCart(defaultRegionId);
       for (const item of cart) {
         if (!item.product.variantId || item.quantity <= 0) {
           continue;
@@ -421,12 +479,21 @@ export function useCheckout() {
 
       await withSingleAuthRetry(
         async () => {
-          const userInfo = await requestInfo();
           const activeCartId = await ensureServerCartFromGuestCart(cartId);
+          const savedUserInfoRaw = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
+          let savedUserInfo: Partial<UserInfo> | undefined;
+          if (savedUserInfoRaw) {
+            try {
+              savedUserInfo = JSON.parse(savedUserInfoRaw) as Partial<UserInfo>;
+            } catch (error) {
+              console.warn("Cannot parse saved user info in checkout:", error);
+            }
+          }
           const normalizedEmail =
-            (userInfo.email || "").trim() || `${userInfo.id}@zalo.local`;
-          const normalizedPhone = (shippingAddress.phone || userInfo.phone || "").trim();
-          const nameParts = (shippingAddress.name || userInfo.name || "Khách hàng")
+            (savedUserInfo?.email || "").trim() ||
+            `guest-${Date.now()}@zalo.local`;
+          const normalizedPhone = (shippingAddress.phone || savedUserInfo?.phone || "").trim();
+          const nameParts = (shippingAddress.name || savedUserInfo?.name || "Khách hàng")
             .trim()
             .split(/\s+/)
             .filter(Boolean);
