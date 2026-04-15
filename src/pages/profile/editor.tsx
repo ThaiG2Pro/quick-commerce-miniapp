@@ -40,57 +40,46 @@ function ProfileEditorPage() {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
         const name = String(data.get("name") || "").trim();
-        const phone = String(data.get("phone") || "").trim();
-        const email = String(data.get("email") || "").trim();
         const address = String(data.get("address") || "").trim();
         const nameParts = splitName(name || userInfo?.name || "");
 
         setSaving(true);
         try {
+          await requestInfo();
           try {
-            await requestInfo();
-            try {
+            await updateCurrentCustomer({
+              first_name: nameParts.first_name || undefined,
+              last_name: nameParts.last_name || undefined,
+              metadata: {
+                address,
+              },
+            });
+          } catch (error) {
+            const status =
+              typeof error === "object" && error !== null
+                ? ((error as { status?: number; response?: { status?: number } }).status ||
+                  (error as { status?: number; response?: { status?: number } }).response?.status)
+                : undefined;
+            if (status === 401 || status === 403) {
+              await requestInfo();
               await updateCurrentCustomer({
                 first_name: nameParts.first_name || undefined,
                 last_name: nameParts.last_name || undefined,
-                email: email || undefined,
-                phone: phone || undefined,
                 metadata: {
                   address,
                 },
               });
-            } catch (error) {
-              const status =
-                typeof error === "object" && error !== null
-                  ? ((error as { status?: number; response?: { status?: number } }).status ||
-                    (error as { status?: number; response?: { status?: number } }).response
-                      ?.status)
-                  : undefined;
-              if (status === 401 || status === 403) {
-                await requestInfo();
-                await updateCurrentCustomer({
-                  first_name: nameParts.first_name || undefined,
-                  last_name: nameParts.last_name || undefined,
-                  email: email || undefined,
-                  phone: phone || undefined,
-                  metadata: {
-                    address,
-                  },
-                });
-              } else {
-                throw error;
-              }
+            } else {
+              throw error;
             }
-          } catch (error) {
-            console.warn("Cannot update Medusa customer profile, fallback to local save:", error);
           }
 
           const newUserInfo = {
             id: userInfo?.id || "",
             name: name || userInfo?.name || "",
             avatar: userInfo?.avatar || "",
-            phone: phone || userInfo?.phone || "",
-            email: email || userInfo?.email || "",
+            phone: userInfo?.phone || "",
+            email: userInfo?.email || "",
             address: address || userInfo?.address || "",
           };
 
@@ -108,18 +97,6 @@ function ProfileEditorPage() {
     >
       <div className="bg-section p-4 grid gap-4">
         <Input name="name" label="Họ tên" defaultValue={userInfo?.name} />
-        <Input
-          name="phone"
-          label="Số điện thoại"
-          required
-          defaultValue={userInfo?.phone}
-        />
-        <Input
-          name="email"
-          label="Email"
-          placeholder="Email"
-          defaultValue={userInfo?.email}
-        />
         <Input
           name="address"
           label="Địa chỉ"

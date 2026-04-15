@@ -16,6 +16,7 @@ import {
   cartErrorState,
   addOrUpdateCartItemState,
   initializeCartState,
+  billingAddressState,
   ordersState,
   refreshCartState,
   selectedPaymentProviderIdState,
@@ -30,7 +31,6 @@ import CONFIG from "@/config";
 import { authorize, getAccessToken, getUserInfo, openChat } from "zmp-sdk/apis";
 import { useAtomCallback } from "jotai/utils";
 import {
-  addShippingAddress,
   addToCart as addLineItem,
   addShippingMethod,
   clearMedusaAuthFromStorage,
@@ -38,14 +38,14 @@ import {
   completeCart,
   createCart,
   getCurrentCustomer,
+  getCurrentCustomerAddress,
   getCart,
   getRegions,
   initializeCartPaymentSessions,
   listCartPaymentProviders,
-  listCartShippingOptions,
-  setCartPaymentSession,
   transformMedusaCustomerToUserInfo,
-  updateCartContact,
+  upsertCurrentCustomerAddress,
+  updateCartAddresses,
 } from "@/lib/medusa-sdk";
 
 type ZaloProfilePayload = {
@@ -326,6 +326,53 @@ export function useRequestInformation() {
   };
 }
 
+export function useHydrateCheckoutAddresses() {
+  const [shippingAddress, setShippingAddress] = useAtom(shippingAddressState);
+  const [billingAddress, setBillingAddress] = useAtom(billingAddressState);
+
+  return useCallback(async () => {
+    if (shippingAddress && billingAddress) {
+      return {
+        shippingAddress,
+        billingAddress,
+      };
+    }
+
+    const hasMedusaAuth = Boolean(
+      localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)
+    );
+    if (!hasMedusaAuth) {
+      setShippingAddress(undefined);
+      setBillingAddress(undefined);
+      return {
+        shippingAddress: undefined,
+        billingAddress: undefined,
+      };
+    }
+
+    const customerAddress = await getCurrentCustomerAddress();
+    if (!customerAddress) {
+      setShippingAddress(undefined);
+      setBillingAddress(undefined);
+      return {
+        shippingAddress: undefined,
+        billingAddress: undefined,
+      };
+    }
+
+    const nextShippingAddress = customerAddress;
+    const nextBillingAddress = customerAddress;
+
+    setShippingAddress(nextShippingAddress);
+    setBillingAddress(nextBillingAddress);
+
+    return {
+      shippingAddress: nextShippingAddress,
+      billingAddress: nextBillingAddress,
+    };
+  }, [billingAddress, setBillingAddress, setShippingAddress, shippingAddress]);
+}
+
 export function useAddToCart(product: Product) {
   const cart = useAtomValue(cartState);
   const mutateCartItem = useSetAtom(addOrUpdateCartItemState);
@@ -431,10 +478,11 @@ export function useCheckout() {
   );
   const selectedShippingOptionId = useAtomValue(selectedShippingOptionIdState);
   const shippingAddress = useAtomValue(shippingAddressState);
-  const setSelectedShippingOptionId = useSetAtom(selectedShippingOptionIdState);
+  const billingAddress = useAtomValue(billingAddressState);
   const setCartPricing = useSetAtom(cartPricingState);
   const setCartError = useSetAtom(cartErrorState);
   const requestInfo = useRequestInformation();
+  const hydrateCheckoutAddresses = useHydrateCheckoutAddresses();
   const navigate = useNavigate();
   const refreshNewOrders = useSetAtom(ordersState("pending"));
 
@@ -473,13 +521,24 @@ export function useCheckout() {
       if (!cart.length) {
         throw new Error("Giỏ hàng đang trống.");
       }
-      if (!shippingAddress?.address || !shippingAddress?.name || !shippingAddress?.city) {
-        throw new Error("Vui lòng nhập địa chỉ nhận hàng trước khi thanh toán.");
-      }
 
       await withSingleAuthRetry(
         async () => {
           const activeCartId = await ensureServerCartFromGuestCart(cartId);
+          const hydratedAddresses = await hydrateCheckoutAddresses();
+          const resolvedShippingAddress =
+            shippingAddress || hydratedAddresses.shippingAddress;
+          const resolvedBillingAddress = billingAddress || hydratedAddresses.billingAddress;
+
+          if (
+            !resolvedShippingAddress?.address ||
+            !resolvedShippingAddress?.name ||
+            !resolvedShippingAddress?.city
+            || !resolvedShippingAddress?.postalCode
+          ) {
+            throw new Error("Vui lòng nhập địa chỉ nhận hàng trước khi thanh toán.");
+          }
+
           const savedUserInfoRaw = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
           let savedUserInfo: Partial<UserInfo> | undefined;
           if (savedUserInfoRaw) {
@@ -489,42 +548,54 @@ export function useCheckout() {
               console.warn("Cannot parse saved user info in checkout:", error);
             }
           }
-          const normalizedEmail =
-            (savedUserInfo?.email || "").trim() ||
-            `guest-${Date.now()}@zalo.local`;
-          const normalizedPhone = (shippingAddress.phone || savedUserInfo?.phone || "").trim();
-          const nameParts = (shippingAddress.name || savedUserInfo?.name || "Khách hàng")
+          const normalizedPhone = (resolvedShippingAddress.phone || savedUserInfo?.phone || "").trim();
+          const normalizedName = (resolvedShippingAddress.name || savedUserInfo?.name || "Khách hàng")
             .trim()
             .split(/\s+/)
             .filter(Boolean);
 
-          await updateCartContact(activeCartId, {
-            email: normalizedEmail,
-          });
+          const firstName = normalizedName[0] || "Khach";
+          const lastName = normalizedName.slice(1).join(" ") || "hàng";
 
-          await addShippingAddress(activeCartId, {
-            first_name: nameParts[0] || "Khach",
-            last_name: nameParts.slice(1).join(" ") || "hàng",
-            address_1: shippingAddress.address,
-            city: shippingAddress.city,
-            country_code: "vn",
-            phone: normalizedPhone || undefined,
+          const nextShippingAddress = {
+            alias: resolvedShippingAddress.alias || "",
+            address: resolvedShippingAddress.address,
+            address2: resolvedShippingAddress.address2,
+            city: resolvedShippingAddress.city,
+            province: resolvedShippingAddress.province,
+            postalCode: resolvedShippingAddress.postalCode,
+            countryCode: resolvedShippingAddress.countryCode || "vn",
+            name: `${firstName} ${lastName}`.trim(),
+            phone: normalizedPhone,
+          };
+
+          const nextBillingAddress = resolvedBillingAddress
+            ? {
+                ...resolvedBillingAddress,
+                countryCode: resolvedBillingAddress.countryCode || nextShippingAddress.countryCode,
+              }
+            : nextShippingAddress;
+
+          const currentCustomer = await getCurrentCustomer();
+          const customerEmail = currentCustomer?.email?.trim() || savedUserInfo?.email?.trim() || "";
+          if (!customerEmail) {
+            throw new Error("Không tìm thấy email khách hàng để tiếp tục thanh toán.");
+          }
+
+          await updateCartAddresses(activeCartId, {
+            shippingAddress: nextShippingAddress,
+            billingAddress: nextBillingAddress,
+            email: customerEmail,
           });
 
           let checkoutCart = await getCart(activeCartId);
           const hasShippingMethod = (checkoutCart.shipping_methods?.length || 0) > 0;
           if (!hasShippingMethod) {
-            let shippingOptionId = selectedShippingOptionId;
-            if (!shippingOptionId) {
-              const options = await listCartShippingOptions(activeCartId);
-              shippingOptionId = options[0]?.id;
-            }
-            if (!shippingOptionId) {
-              throw new Error("Không có phương thức vận chuyển khả dụng.");
+            if (!selectedShippingOptionId) {
+              throw new Error("Vui lòng chọn phương thức vận chuyển trước khi thanh toán.");
             }
 
-            checkoutCart = await addShippingMethod(activeCartId, shippingOptionId);
-            setSelectedShippingOptionId(shippingOptionId);
+            checkoutCart = await addShippingMethod(activeCartId, selectedShippingOptionId);
           }
 
           let paymentProviderId = selectedPaymentProviderId;
@@ -539,8 +610,7 @@ export function useCheckout() {
             throw new Error("Không có phương thức thanh toán khả dụng.");
           }
 
-          await initializeCartPaymentSessions(activeCartId);
-          await setCartPaymentSession(activeCartId, paymentProviderId);
+          await initializeCartPaymentSessions(activeCartId, paymentProviderId);
           await completeCart(activeCartId);
         },
         async () => {

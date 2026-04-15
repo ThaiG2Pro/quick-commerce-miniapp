@@ -97,7 +97,11 @@ export interface Location {
 export interface ShippingAddress {
   alias: string;
   address: string;
+  address2?: string;
   city: string;
+  province?: string;
+  postalCode?: string;
+  countryCode?: string;
   name: string;
   phone: string;
 }

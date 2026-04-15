@@ -1,5 +1,11 @@
 import Medusa from "@medusajs/js-sdk";
-import { LoyaltyProfile, Station, StorefrontProfile, UserInfo } from "@/types";
+import {
+  LoyaltyProfile,
+  ShippingAddress,
+  Station,
+  StorefrontProfile,
+  UserInfo,
+} from "@/types";
 import CONFIG from "@/config";
 
 // Cấu hình Medusa SDK
@@ -50,6 +56,122 @@ function ensureCalculatedPriceField(fields?: string) {
   }
 
   return `${CALCULATED_PRICE_FIELD},${fields}`;
+}
+
+function getErrorStatusCode(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) {
+    return undefined;
+  }
+
+  const candidate = error as {
+    status?: number;
+    response?: { status?: number };
+  };
+
+  return candidate.status || candidate.response?.status;
+}
+
+function isAuthError(error: unknown) {
+  const status = getErrorStatusCode(error);
+  return status === 401 || status === 403;
+}
+
+type MedusaCustomerAddress = {
+  id?: string;
+  first_name?: string;
+  last_name?: string;
+  address_1?: string;
+  address_2?: string;
+  city?: string;
+  province?: string;
+  postal_code?: string;
+  country_code?: string;
+  phone?: string;
+  metadata?: Record<string, unknown>;
+};
+
+function splitFullName(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return {
+    first_name: parts[0] || "Khach",
+    last_name: parts.slice(1).join(" ") || "hàng",
+  };
+}
+
+function toShippingAddressPayload(address: ShippingAddress) {
+  const name = address.name.trim() || "Khách hàng";
+  const { first_name, last_name } = splitFullName(name);
+
+  return {
+    first_name,
+    last_name,
+    address_1: address.address.trim(),
+    address_2: address.address2?.trim() || undefined,
+    city: address.city.trim(),
+    province: address.province?.trim() || undefined,
+    postal_code: address.postalCode?.trim() || undefined,
+    country_code: address.countryCode?.trim().toLowerCase() || "vn",
+    phone: address.phone.trim() || undefined,
+  };
+}
+
+function transformMedusaCustomerAddressRecord(
+  address: unknown
+): (MedusaCustomerAddress & { id: string }) | null {
+  if (!address || typeof address !== "object") {
+    return null;
+  }
+
+  const record = address as MedusaCustomerAddress;
+  if (!record.id) {
+    return null;
+  }
+
+  return {
+    ...record,
+    id: record.id,
+  };
+}
+
+export function transformMedusaCustomerAddressToShippingAddress(
+  address: unknown
+): ShippingAddress | null {
+  const record = transformMedusaCustomerAddressRecord(address);
+  if (!record) {
+    return null;
+  }
+
+  const firstName = typeof record.first_name === "string" ? record.first_name.trim() : "";
+  const lastName = typeof record.last_name === "string" ? record.last_name.trim() : "";
+  const name = [firstName, lastName].filter(Boolean).join(" ");
+  const metadata = record.metadata || {};
+  const alias =
+    toNonEmptyString(metadata.alias) ||
+    toNonEmptyString(metadata.name) ||
+    toNonEmptyString(metadata.label) ||
+    name ||
+    toNonEmptyString(record.address_1) ||
+    "Địa chỉ mặc định";
+
+  const addressLine = toNonEmptyString(record.address_1) || "";
+  const city = toNonEmptyString(record.city) || "";
+  const phone = toNonEmptyString(record.phone) || "";
+
+  if (!addressLine || !city) {
+    return null;
+  }
+
+  return {
+    alias,
+    address: addressLine,
+    address2: toNonEmptyString(record.address_2),
+    city,
+    province: toNonEmptyString(record.province),
+    postalCode: toNonEmptyString(record.postal_code),
+    countryCode: toNonEmptyString(record.country_code)?.toLowerCase() || "vn",
+    name: name || alias,
+    phone,
+  };
 }
 
 // Helper functions để làm việc với Medusa
@@ -205,7 +327,7 @@ export async function removeLineItem(cartId: string, lineItemId: string) {
 }
 
 /**
- * Thêm địa chỉ giao hàng
+ * Thêm hoặc đồng bộ địa chỉ giao hàng cho cart.
  */
 export async function addShippingAddress(
   cartId: string,
@@ -222,10 +344,20 @@ export async function addShippingAddress(
   }
 ) {
   try {
-    const response = await sdk.store.cart.update(cartId, {
-      shipping_address: address,
+    const response = await updateCartAddresses(cartId, {
+      shippingAddress: {
+        alias: "",
+        address: address.address_1,
+        city: address.city,
+        name: [address.first_name, address.last_name].filter(Boolean).join(" "),
+        phone: address.phone || "",
+        address2: address.address_2,
+        province: address.province,
+        postalCode: address.postal_code,
+        countryCode: address.country_code,
+      },
     });
-    return response.cart;
+    return response;
   } catch (error) {
     console.error("Error adding shipping address:", error);
     throw error;
@@ -275,7 +407,9 @@ export async function addShippingMethod(
  */
 export async function listCartShippingOptions(cartId: string) {
   try {
-    const response = await sdk.store.cart.listShippingOptions(cartId);
+    const response = await sdk.store.fulfillment.listCartOptions({
+      cart_id: cartId,
+    });
     return response.shipping_options;
   } catch (error) {
     console.error("Error fetching cart shipping options:", error);
@@ -320,30 +454,18 @@ export async function listCartPaymentProviders(cartId: string, regionId?: string
 /**
  * Khởi tạo payment sessions cho cart.
  */
-export async function initializeCartPaymentSessions(cartId: string) {
-  try {
-    const response = await sdk.store.cart.initializePaymentSession(cartId);
-    return response.cart;
-  } catch (error) {
-    console.error("Error initializing cart payment sessions:", error);
-    throw error;
-  }
-}
-
-/**
- * Chọn payment session cho cart theo provider.
- */
-export async function setCartPaymentSession(
+export async function initializeCartPaymentSessions(
   cartId: string,
   providerId: string
 ) {
   try {
-    const response = await sdk.store.cart.setPaymentSession(cartId, {
+    const cart = await getCart(cartId);
+    const response = await sdk.store.payment.initiatePaymentSession(cart, {
       provider_id: providerId,
     });
-    return response.cart;
+    return response.payment_collection;
   } catch (error) {
-    console.error("Error setting cart payment session:", error);
+    console.error("Error initializing cart payment sessions:", error);
     throw error;
   }
 }
@@ -509,17 +631,98 @@ export async function getCurrentCustomer() {
 }
 
 /**
+ * Lấy địa chỉ customer hiện tại từ Medusa.
+ */
+export async function getCurrentCustomerAddress() {
+  try {
+    const response = await sdk.store.customer.listAddress({
+      limit: 1,
+      fields: "id,first_name,last_name,address_1,address_2,city,province,postal_code,country_code,phone,metadata",
+    });
+    return transformMedusaCustomerAddressToShippingAddress(response.addresses?.[0]);
+  } catch (error) {
+    if (isAuthError(error)) {
+      await clearMedusaAuthFromStorage();
+      return undefined;
+    }
+    console.error("Error fetching customer address:", error);
+    throw error;
+  }
+}
+
+export async function upsertCurrentCustomerAddress(address: ShippingAddress) {
+  try {
+    const response = await sdk.store.customer.listAddress({
+      limit: 1,
+      fields: "id",
+    });
+    const existingAddress = transformMedusaCustomerAddressRecord(response.addresses?.[0]);
+    const body = {
+      first_name: splitFullName(address.name).first_name,
+      last_name: splitFullName(address.name).last_name,
+      address_1: address.address,
+      address_2: address.address2,
+      city: address.city,
+      province: address.province,
+      postal_code: address.postalCode,
+      country_code: address.countryCode || "vn",
+      phone: address.phone || undefined,
+      metadata: {
+        alias: address.alias || undefined,
+      },
+    };
+
+    if (existingAddress?.id) {
+      return await sdk.store.customer.updateAddress(existingAddress.id, body);
+    }
+
+    return await sdk.store.customer.createAddress(body);
+  } catch (error) {
+    console.error("Error upserting customer address:", error);
+    throw error;
+  }
+}
+
+/**
+ * Cập nhật shipping/billing address của cart.
+ */
+export async function updateCartAddresses(
+  cartId: string,
+  payload: {
+    shippingAddress: ShippingAddress;
+    billingAddress?: ShippingAddress;
+    email?: string;
+  }
+) {
+  try {
+    const response = await sdk.store.cart.update(cartId, {
+      ...(payload.email ? { email: payload.email } : {}),
+      shipping_address: toShippingAddressPayload(payload.shippingAddress),
+      billing_address: toShippingAddressPayload(payload.billingAddress || payload.shippingAddress),
+    });
+    return response.cart;
+  } catch (error) {
+    console.error("Error updating cart addresses:", error);
+    throw error;
+  }
+}
+
+/**
  * Cập nhật thông tin customer hiện tại trên Medusa.
  */
 export async function updateCurrentCustomer(payload: {
   first_name?: string;
   last_name?: string;
-  email?: string;
   phone?: string;
   metadata?: Record<string, unknown>;
 }) {
   try {
-    const response = await sdk.store.customer.update(payload);
+    const response = await sdk.store.customer.update({
+      first_name: payload.first_name,
+      last_name: payload.last_name,
+      phone: payload.phone,
+      metadata: payload.metadata,
+    });
     return response.customer;
   } catch (error) {
     console.error("Error updating customer:", error);

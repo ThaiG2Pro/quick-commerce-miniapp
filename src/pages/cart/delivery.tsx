@@ -24,6 +24,7 @@ import { Suspense, useEffect, useMemo } from "react";
 import { formatPrice } from "@/utils/format";
 import toast from "react-hot-toast";
 import DeliverySummary from "./delivery-summary";
+import { useHydrateCheckoutAddresses } from "@/hooks";
 
 function ShippingAddressSummary() {
   const shippingAddress = useAtomValue(shippingAddressState);
@@ -70,6 +71,11 @@ function SelectedStationSummary() {
 function Delivery() {
   const [selectedDeliveryMode, setSelectedDeliveryMode] =
     useAtom(deliveryModeState);
+  const hydrateCheckoutAddresses = useHydrateCheckoutAddresses();
+
+  useEffect(() => {
+    void hydrateCheckoutAddresses();
+  }, [hydrateCheckoutAddresses]);
 
   return (
     <Section title="Hình thức giao hàng" className="rounded-lg">
@@ -134,25 +140,15 @@ function ShippingOptions() {
     ) {
       return selectedShippingOptionId;
     }
-    return shippingOptions[0]?.id;
+    return null;
   }, [selectedShippingOptionId, shippingOptions]);
 
   useEffect(() => {
-    if (selectedShippingOptionId || !shippingOptions.length || cartMutating) {
+    if (effectiveSelectedId || !shippingOptions.length) {
       return;
     }
-    applyShippingOption(shippingOptions[0].id)
-      .then(() => setSelectedShippingOptionId(shippingOptions[0].id))
-      .catch((error) => {
-        console.error("Failed to set default shipping option:", error);
-      });
-  }, [
-    applyShippingOption,
-    cartMutating,
-    selectedShippingOptionId,
-    setSelectedShippingOptionId,
-    shippingOptions,
-  ]);
+    setSelectedShippingOptionId(shippingOptions[0].id);
+  }, [effectiveSelectedId, selectedShippingOptionId, setSelectedShippingOptionId, shippingOptions]);
 
   if (!shippingOptions.length) {
     return (

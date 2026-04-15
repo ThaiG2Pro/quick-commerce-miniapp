@@ -2,7 +2,9 @@ import Barcode from "./barcode";
 import barcodeIllusLeft from "@/static/barcode-illus-left.svg";
 import barcodeIllusRight from "@/static/barcode-illus-right.svg";
 import { useAtomValue } from "jotai";
-import { loyaltyProfileStateUnwrapped } from "@/state";
+import { loyaltyProfileState } from "@/state";
+import { useRequestInformation } from "@/hooks";
+import { Button } from "zmp-ui";
 
 function formatExpiryDate(value: string) {
   const date = new Date(value);
@@ -13,7 +15,22 @@ function formatExpiryDate(value: string) {
 }
 
 export default function Points() {
-  const loyalty = useAtomValue(loyaltyProfileStateUnwrapped);
+  const loyalty = useAtomValue(loyaltyProfileState);
+  const requestInfo = useRequestInformation();
+
+  if (!loyalty) {
+    return (
+      <div className="rounded-lg bg-primary text-white p-6 text-center space-y-3">
+        <div className="text-lg font-medium">Chưa có dữ liệu tích điểm</div>
+        <div className="text-2xs opacity-90">
+          Đăng nhập để đồng bộ điểm tích lũy từ server.
+        </div>
+        <Button onClick={requestInfo} fullWidth>
+          Đăng nhập
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div

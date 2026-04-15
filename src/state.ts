@@ -12,7 +12,6 @@ import {
   Category,
   Delivery,
   Location,
-  LoyaltyProfile,
   Order,
   OrderStatus,
   Product,
@@ -44,14 +43,12 @@ import {
   getProducts,
   getRegions,
   getLoyaltyProfile,
-  getStoreBranches,
   getStorefrontProfile,
   getOrder,
   getOrders,
   getCurrentCustomer,
   transformMedusaCustomerToUserInfo,
   hydrateMedusaAuthFromStorage,
-  listCartShippingOptions,
   listCartPaymentProviders,
   removeLineItem,
   removePromotionCodes,
@@ -72,11 +69,6 @@ const DEFAULT_STOREFRONT_PROFILE: StorefrontProfile = {
   shopName: getConfig((config) => config.template.shopName),
   shopAddress: getConfig((config) => config.template.shopAddress),
   logoUrl: getConfig((config) => config.template.logoUrl),
-};
-const DEFAULT_LOYALTY_PROFILE: LoyaltyProfile = {
-  points: 20,
-  expiryDate: "2024-12-02",
-  barcodeValue: "MEMBER-0001",
 };
 
 export const userInfoKeyState = atom(0);
@@ -146,15 +138,11 @@ export const storefrontProfileStateUnwrapped = unwrap(
   (prev) => prev ?? DEFAULT_STOREFRONT_PROFILE
 );
 
-export const loyaltyProfileState = atom(async () => {
+export const loyaltyProfileState = atom(async (get) => {
+  get(userInfoKeyState);
   const profile = await getLoyaltyProfile();
-  return profile || DEFAULT_LOYALTY_PROFILE;
+  return profile;
 });
-
-export const loyaltyProfileStateUnwrapped = unwrap(
-  loyaltyProfileState,
-  (prev) => prev ?? DEFAULT_LOYALTY_PROFILE
-);
 
 export const phoneState = atom(async () => {
   let phone = "";
@@ -492,18 +480,18 @@ export const selectedCartItemIdsState = atom<number[]>([]);
 export const cartTotalState = atom((get) => {
   const items = get(cartState);
   const pricing = get(cartPricingState);
-  const fallbackTotalAmount = items.reduce(
+  const itemsTotalAmount = items.reduce(
     (total, item) => total + item.product.price * item.quantity,
     0
   );
 
   return {
     totalItems: items.reduce((total, item) => total + item.quantity, 0),
-    subtotalAmount: pricing?.subtotal ?? fallbackTotalAmount,
+    subtotalAmount: itemsTotalAmount,
     discountAmount: pricing?.discountTotal ?? 0,
     shippingAmount: pricing?.shippingTotal ?? 0,
     taxAmount: pricing?.taxTotal ?? 0,
-    totalAmount: pricing?.total ?? fallbackTotalAmount,
+    totalAmount: pricing?.total ?? itemsTotalAmount,
     currencyCode: pricing?.currencyCode ?? "VND",
     isTaxInclusive: Boolean(pricing?.isTaxInclusive),
     promotionCodes: pricing?.promotionCodes ?? [],
@@ -756,36 +744,7 @@ export const stationsState = atom(async (get) => {
   }
 
   const mockStations = await requestWithFallback<Station[]>("/stations", []);
-  const branchStations = await getStoreBranches();
-  const cartId = get(cartIdState);
-  const medusaShippingOptions = cartId
-    ? await (async () => {
-        try {
-          return await listCartShippingOptions(cartId);
-        } catch (error) {
-          console.warn("Cannot load location source from Medusa shipping options:", error);
-          return [];
-        }
-      })()
-    : [];
-
-  const medusaStations = medusaShippingOptions.map((option, index) => ({
-    id: index + 1_000_000,
-    name: option.name,
-    image: "",
-    address: "Nguồn từ Medusa shipping options",
-    location: {
-      lat: location?.lat ?? 10.773756,
-      lng: location?.lng ?? 106.689247,
-    },
-    source: "medusa" as const,
-  }));
-
-  const stations = branchStations.length
-    ? branchStations
-    : medusaStations.length
-      ? medusaStations
-      : mockStations;
+  const stations = mockStations.length ? mockStations : [];
   const stationsWithDistance = stations.map((station) => ({
     ...station,
     distance: location
@@ -811,9 +770,8 @@ export const selectedStationState = atom(async (get) => {
   return stations[index];
 });
 
-export const shippingAddressState = atomWithStorage<
-  ShippingAddress | undefined
->(CONFIG.STORAGE_KEYS.SHIPPING_ADDRESS, undefined);
+export const shippingAddressState = atom<ShippingAddress | undefined>(undefined);
+export const billingAddressState = atom<ShippingAddress | undefined>(undefined);
 
 export const ordersState = atomFamily((status: OrderStatus) =>
   atomWithRefresh(async () => {

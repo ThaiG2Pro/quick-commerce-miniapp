@@ -14,14 +14,14 @@ export default function CartSummary() {
         <table className="table w-full text-sm [&_th]:text-left [&_th]:text-xs [&_th]:text-inactive [&_th]:font-medium [&_td]:text-right">
           <tbody>
             <tr>
-              <th>Tạm tính</th>
+              <th>Giá gốc sản phẩm</th>
               <td>{formatPrice(subtotalAmount, currencyCode)}</td>
             </tr>
           </tbody>
         </table>
         <HorizontalDivider />
         <div className="flex justify-between font-medium text-sm">
-          <div>Tổng dự kiến</div>
+          <div>Tổng thanh toán</div>
           <div>{formatPrice(totalAmount, currencyCode)}</div>
         </div>
       </div>

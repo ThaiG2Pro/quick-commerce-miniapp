@@ -5,6 +5,7 @@ import {
   cartMutatingState,
   cartTotalState,
   paymentProvidersState,
+  selectedShippingOptionIdState,
   selectedPaymentProviderIdState,
 } from "@/state";
 import { formatPrice } from "@/utils/format";
@@ -24,6 +25,7 @@ export default function Pay() {
   } = useAtomValue(cartTotalState);
   const cartMutating = useAtomValue(cartMutatingState);
   const cartInitializing = useAtomValue(cartInitializingState);
+  const selectedShippingOptionId = useAtomValue(selectedShippingOptionIdState);
   const checkout = useCheckout();
   const [paying, setPaying] = useState(false);
 
@@ -33,7 +35,7 @@ export default function Pay() {
         <div className="text-xs text-subtitle mb-2">Thanh toán</div>
         <div className="space-y-1.5 text-xs">
           <div className="flex justify-between">
-            <span className="text-subtitle">Tạm tính</span>
+            <span className="text-subtitle">Giá gốc sản phẩm</span>
             <span>{formatPrice(subtotalAmount, currencyCode)}</span>
           </div>
           <div className="flex justify-between">
@@ -64,6 +66,9 @@ export default function Pay() {
             </div>
           )}
           <div className="h-px bg-black/10 my-1" />
+          <div className="text-[11px] text-subtitle">
+            Medusa tính lại thuế/khuyến mãi/phí ship theo cấu hình của cửa hàng.
+          </div>
           <div className="flex justify-between text-sm font-medium text-primary">
             <span>Tổng thanh toán</span>
             <span>{formatPrice(totalAmount, currencyCode)}</span>
@@ -73,7 +78,7 @@ export default function Pay() {
       <Suspense
         fallback={<div className="px-4 pb-2 text-xs text-subtitle">Đang tải phương thức thanh toán...</div>}
       >
-        <PaymentProviderSelector />
+        <PaymentProviderSelector selectedShippingOptionId={selectedShippingOptionId} />
       </Suspense>
       <div className="flex items-center py-2 px-4">
         <div className="flex-1" />
@@ -87,16 +92,20 @@ export default function Pay() {
               setPaying(false);
             }
           }}
-          disabled={paying || cartMutating || cartInitializing}
+          disabled={paying || cartMutating || cartInitializing || !selectedShippingOptionId}
         >
-          {paying ? "Đang xử lý..." : "Thanh toán"}
+          {paying ? "Đang xử lý..." : selectedShippingOptionId ? "Thanh toán" : "Chọn ship trước"}
         </Button>
       </div>
     </div>
   );
 }
 
-function PaymentProviderSelector() {
+function PaymentProviderSelector({
+  selectedShippingOptionId,
+}: {
+  selectedShippingOptionId: string | null;
+}) {
   const providers = useAtomValue(paymentProvidersState);
   const [selectedPaymentProviderId, setSelectedPaymentProviderId] = useAtom(
     selectedPaymentProviderIdState
@@ -130,6 +139,11 @@ function PaymentProviderSelector() {
   return (
     <div className="px-4 pb-2">
       <div className="text-xs text-subtitle mb-2">Phương thức thanh toán</div>
+      {!selectedShippingOptionId && (
+        <div className="mb-2 text-[11px] text-subtitle">
+          Chọn phương thức giao hàng trước để checkout ổn định hơn.
+        </div>
+      )}
       <div className="space-y-2">
         {providers.map((provider) => {
           const isSelected = provider.id === effectiveSelectedId;
