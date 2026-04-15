@@ -23,6 +23,8 @@
   "dependencies": {
     "@medusajs/js-sdk": "^2.13.6",
     "@react-spring/web": "^9.7.4",
+    "@stripe/react-stripe-js": "^6.2.0",
+    "@stripe/stripe-js": "^9.2.0",
     "@use-gesture/react": "^10.3.1",
     "embla-carousel-autoplay": "^8.3.0",
     "embla-carousel-react": "^8.3.0",

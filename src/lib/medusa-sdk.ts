@@ -451,6 +451,65 @@ export async function listCartPaymentProviders(cartId: string, regionId?: string
   }
 }
 
+type MedusaPaymentSession = {
+  provider_id?: string;
+  client_secret?: string;
+  payment_intent_client_secret?: string;
+  data?: {
+    client_secret?: string;
+    payment_intent_client_secret?: string;
+    [key: string]: unknown;
+  };
+  provider_data?: {
+    client_secret?: string;
+    payment_intent_client_secret?: string;
+    [key: string]: unknown;
+  };
+};
+
+type MedusaPaymentCollection = {
+  id?: string;
+  payment_sessions?: MedusaPaymentSession[];
+  paymentSessions?: MedusaPaymentSession[];
+};
+
+type PaymentSessionInitResponse = {
+  payment_collection?: MedusaPaymentCollection;
+  [key: string]: unknown;
+};
+
+function getPaymentSessions(paymentCollection?: MedusaPaymentCollection | null) {
+  if (!paymentCollection) {
+    return [];
+  }
+
+  return paymentCollection.payment_sessions || paymentCollection.paymentSessions || [];
+}
+
+export function extractPaymentCollectionClientSecret(
+  paymentCollection?: MedusaPaymentCollection | null,
+  providerId?: string
+) {
+  const sessions = getPaymentSessions(paymentCollection);
+  const matchedSession =
+    (providerId &&
+      sessions.find((session) => session.provider_id === providerId)) ||
+    sessions[0];
+
+  if (!matchedSession) {
+    return undefined;
+  }
+
+  return (
+    matchedSession.client_secret ||
+    matchedSession.payment_intent_client_secret ||
+    matchedSession.data?.client_secret ||
+    matchedSession.data?.payment_intent_client_secret ||
+    matchedSession.provider_data?.client_secret ||
+    matchedSession.provider_data?.payment_intent_client_secret
+  );
+}
+
 /**
  * Khởi tạo payment sessions cho cart.
  */
@@ -463,7 +522,7 @@ export async function initializeCartPaymentSessions(
     const response = await sdk.store.payment.initiatePaymentSession(cart, {
       provider_id: providerId,
     });
-    return response.payment_collection;
+    return response as PaymentSessionInitResponse;
   } catch (error) {
     console.error("Error initializing cart payment sessions:", error);
     throw error;

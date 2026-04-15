@@ -50,6 +50,7 @@ import {
   transformMedusaCustomerToUserInfo,
   hydrateMedusaAuthFromStorage,
   listCartPaymentProviders,
+  listCartShippingOptions,
   removeLineItem,
   removePromotionCodes,
   updateLineItem,
@@ -243,6 +244,22 @@ export const selectedPaymentProviderIdState = atomWithStorage<string | null>(
   CONFIG.STORAGE_KEYS.PAYMENT_PROVIDER_ID,
   null
 );
+
+export type StripeCheckoutState = {
+  paymentCollectionId: string | null;
+  clientSecret: string | null;
+  providerId: string | null;
+  status: "idle" | "preparing" | "ready" | "confirming" | "error";
+  error: string | null;
+};
+
+export const stripeCheckoutState = atom<StripeCheckoutState>({
+  paymentCollectionId: null,
+  clientSecret: null,
+  providerId: null,
+  status: "idle",
+  error: null,
+});
 
 function getErrorStatusCode(error: unknown): number | undefined {
   if (typeof error !== "object" || error === null) {

@@ -1,16 +1,36 @@
 import { useCheckout } from "@/hooks";
-import { useAtom, useAtomValue } from "jotai";
 import {
   cartInitializingState,
   cartMutatingState,
   cartTotalState,
   paymentProvidersState,
-  selectedShippingOptionIdState,
   selectedPaymentProviderIdState,
+  selectedShippingOptionIdState,
+  stripeCheckoutState,
 } from "@/state";
 import { formatPrice } from "@/utils/format";
-import { Button } from "zmp-ui";
+import { loadStripe } from "@stripe/stripe-js";
+import {
+  Elements,
+  PaymentElement,
+  useElements,
+  useStripe,
+} from "@stripe/react-stripe-js";
+import { useAtom, useAtomValue } from "jotai";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Button } from "zmp-ui";
+
+const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "";
+const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
+
+function isStripeProvider(provider?: { id: string; name?: string } | null) {
+  if (!provider) {
+    return false;
+  }
+
+  return /stripe/i.test(`${provider.id} ${provider.name || ""}`);
+}
 
 export default function Pay() {
   const {
@@ -26,8 +46,37 @@ export default function Pay() {
   const cartMutating = useAtomValue(cartMutatingState);
   const cartInitializing = useAtomValue(cartInitializingState);
   const selectedShippingOptionId = useAtomValue(selectedShippingOptionIdState);
-  const checkout = useCheckout();
+  const selectedPaymentProviderId = useAtomValue(selectedPaymentProviderIdState);
+  const providers = useAtomValue(paymentProvidersState);
+  const stripeCheckout = useAtomValue(stripeCheckoutState);
+  const [searchParams] = useSearchParams();
+  const {
+    startPayment,
+    completeStripePayment,
+    resetStripeCheckout,
+  } = useCheckout();
   const [paying, setPaying] = useState(false);
+  const selectedPaymentProvider = useMemo(
+    () =>
+      providers.find((provider) => provider.id === selectedPaymentProviderId) ||
+      providers[0] ||
+      null,
+    [providers, selectedPaymentProviderId]
+  );
+  const redirectClientSecret = searchParams.get("payment_intent_client_secret");
+  const isStripeSelected = isStripeProvider(selectedPaymentProvider);
+  const canRenderStripeForm =
+    isStripeSelected &&
+    stripeCheckout.status === "ready" &&
+    stripeCheckout.clientSecret !== null &&
+    stripeCheckout.providerId === selectedPaymentProvider?.id;
+  const canHandleStripeReturn = Boolean(redirectClientSecret);
+
+  useEffect(() => {
+    if (!isStripeSelected && stripeCheckout.status !== "idle") {
+      resetStripeCheckout();
+    }
+  }, [isStripeSelected, resetStripeCheckout, stripeCheckout.status]);
 
   return (
     <div className="flex-none bg-section">
@@ -75,28 +124,65 @@ export default function Pay() {
           </div>
         </div>
       </div>
+
       <Suspense
-        fallback={<div className="px-4 pb-2 text-xs text-subtitle">Đang tải phương thức thanh toán...</div>}
+        fallback={
+          <div className="px-4 pb-2 text-xs text-subtitle">
+            Đang tải phương thức thanh toán...
+          </div>
+        }
       >
         <PaymentProviderSelector selectedShippingOptionId={selectedShippingOptionId} />
       </Suspense>
-      <div className="flex items-center py-2 px-4">
-        <div className="flex-1" />
-        <Button
-          className="w-full"
-          onClick={async () => {
-            setPaying(true);
-            try {
-              await checkout();
-            } finally {
-              setPaying(false);
+
+      {stripeCheckout.error && (
+        <div className="px-4 pb-2 text-xs text-red-600">{stripeCheckout.error}</div>
+      )}
+
+      {canHandleStripeReturn ? (
+        <StripeRedirectReturn
+          clientSecret={redirectClientSecret}
+          onComplete={completeStripePayment}
+        />
+      ) : canRenderStripeForm ? (
+        <StripeCheckoutForm
+          clientSecret={stripeCheckout.clientSecret}
+          onComplete={completeStripePayment}
+          onCancel={resetStripeCheckout}
+        />
+      ) : (
+        <div className="flex items-center py-2 px-4">
+          <div className="flex-1" />
+          <Button
+            className="w-full"
+            onClick={async () => {
+              setPaying(true);
+              try {
+                await startPayment(selectedPaymentProvider);
+              } catch {
+                // toast/error state handled inside the checkout hook
+              } finally {
+                setPaying(false);
+              }
+            }}
+            disabled={
+              paying ||
+              cartMutating ||
+              cartInitializing ||
+              !selectedShippingOptionId ||
+              !selectedPaymentProvider
             }
-          }}
-          disabled={paying || cartMutating || cartInitializing || !selectedShippingOptionId}
-        >
-          {paying ? "Đang xử lý..." : selectedShippingOptionId ? "Thanh toán" : "Chọn ship trước"}
-        </Button>
-      </div>
+          >
+            {paying || stripeCheckout.status === "preparing"
+              ? "Đang xử lý..."
+              : !selectedPaymentProvider
+                ? "Đang tải phương thức..."
+                : selectedShippingOptionId
+                ? "Thanh toán"
+                : "Chọn ship trước"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -162,4 +248,167 @@ function PaymentProviderSelector({
       </div>
     </div>
   );
+}
+
+function StripeCheckoutForm({
+  clientSecret,
+  onComplete,
+  onCancel,
+}: {
+  clientSecret: string;
+  onComplete: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  if (!stripePromise) {
+    return (
+      <div className="px-4 pb-3 text-xs text-red-600">
+        Thiếu VITE_STRIPE_PUBLISHABLE_KEY nên không thể hiển thị form Stripe.
+      </div>
+    );
+  }
+
+  return (
+    <Elements key={clientSecret} stripe={stripePromise} options={{ clientSecret }}>
+      <StripeCheckoutFormInner onComplete={onComplete} onCancel={onCancel} />
+    </Elements>
+  );
+}
+
+function StripeCheckoutFormInner({
+  onComplete,
+  onCancel,
+}: {
+  onComplete: () => Promise<void>;
+  onCancel: () => void;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  return (
+    <form
+      className="px-4 pb-3 space-y-3"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        if (!stripe || !elements) {
+          setMessage("Stripe chưa sẵn sàng. Vui lòng thử lại.");
+          return;
+        }
+
+        setLoading(true);
+        setMessage(null);
+        try {
+          const result = await stripe.confirmPayment({
+            elements,
+            confirmParams: {
+              return_url: window.location.href,
+            },
+            redirect: "if_required",
+          });
+
+          if (result.error) {
+            setMessage(result.error.message || "Thanh toán Stripe thất bại.");
+            return;
+          }
+
+          if (result.paymentIntent?.status === "succeeded") {
+            await onComplete();
+            return;
+          }
+
+          if (result.paymentIntent?.status) {
+            setMessage(
+              `Stripe trả về trạng thái ${result.paymentIntent.status}. Vui lòng thử lại.`
+            );
+            return;
+          }
+
+          setMessage("Stripe đang xử lý thanh toán. Vui lòng chờ chuyển hướng.");
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error && error.message
+              ? error.message
+              : "Thanh toán Stripe thất bại.";
+          setMessage(errorMessage);
+        } finally {
+          setLoading(false);
+        }
+      }}
+    >
+      <PaymentElement />
+      {message && <div className="text-xs text-red-600">{message}</div>}
+      <div className="flex gap-2">
+        <Button type="submit" className="flex-1" disabled={loading}>
+          {loading ? "Đang xác nhận..." : "Xác nhận thanh toán"}
+        </Button>
+        <Button type="button" variant="secondary" onClick={onCancel} disabled={loading}>
+          Đổi phương thức
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function StripeRedirectReturn({
+  clientSecret,
+  onComplete,
+}: {
+  clientSecret: string;
+  onComplete: () => Promise<void>;
+}) {
+  const [message, setMessage] = useState("Đang xác minh kết quả thanh toán Stripe...");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      if (!stripePromise) {
+        throw new Error("Thiếu cấu hình Stripe publishable key.");
+      }
+
+      const stripe = await stripePromise;
+      if (!stripe || cancelled) {
+        return;
+      }
+
+      const { paymentIntent, error } = await stripe.retrievePaymentIntent(clientSecret);
+      if (cancelled) {
+        return;
+      }
+
+      if (error) {
+        throw new Error(error.message || "Không thể xác minh thanh toán Stripe.");
+      }
+
+      if (!paymentIntent) {
+        throw new Error("Không nhận được payment intent từ Stripe.");
+      }
+
+      if (paymentIntent.status !== "succeeded") {
+        setMessage(`Stripe trả về trạng thái ${paymentIntent.status}.`);
+        return;
+      }
+
+      await onComplete();
+    };
+
+    run().catch((error) => {
+      if (cancelled) {
+        return;
+      }
+
+      const errorMessage =
+        error instanceof Error && error.message
+          ? error.message
+          : "Không thể hoàn tất xác minh Stripe.";
+      setMessage(errorMessage);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clientSecret, onComplete]);
+
+  return <div className="px-4 pb-3 text-xs text-subtitle">{message}</div>;
 }

@@ -21,6 +21,7 @@ import {
   refreshCartState,
   selectedPaymentProviderIdState,
   selectedShippingOptionIdState,
+  stripeCheckoutState,
   shippingAddressState,
   userInfoKeyState,
   userInfoState,
@@ -37,6 +38,7 @@ import {
   authenticateWithZaloAccessToken,
   completeCart,
   createCart,
+  extractPaymentCollectionClientSecret,
   getCurrentCustomer,
   getCurrentCustomerAddress,
   getCart,
@@ -476,7 +478,10 @@ export function useCheckout() {
   const [selectedPaymentProviderId, setSelectedPaymentProviderId] = useAtom(
     selectedPaymentProviderIdState
   );
-  const selectedShippingOptionId = useAtomValue(selectedShippingOptionIdState);
+  const [, setStripeCheckout] = useAtom(stripeCheckoutState);
+  const [selectedShippingOptionId, setSelectedShippingOptionId] = useAtom(
+    selectedShippingOptionIdState
+  );
   const shippingAddress = useAtomValue(shippingAddressState);
   const billingAddress = useAtomValue(billingAddressState);
   const setCartPricing = useSetAtom(cartPricingState);
@@ -486,8 +491,39 @@ export function useCheckout() {
   const navigate = useNavigate();
   const refreshNewOrders = useSetAtom(ordersState("pending"));
 
-  return async () => {
-    async function ensureServerCartFromGuestCart(currentCartId: string | null) {
+  const resetCheckoutStateAfterSuccess = useCallback(() => {
+    setCartError(null);
+    setCart([]);
+    setCartId(null);
+    setSelectedShippingOptionId(null);
+    setSelectedPaymentProviderId(null);
+    setStripeCheckout({
+      paymentCollectionId: null,
+      clientSecret: null,
+      providerId: null,
+      status: "idle",
+      error: null,
+    });
+    setCartPricing(null);
+    refreshNewOrders();
+    navigate("/orders", {
+      viewTransition: true,
+    });
+    toast.success("Đặt hàng thành công. Cảm ơn bạn đã mua hàng!");
+  }, [
+    navigate,
+    refreshNewOrders,
+    setCart,
+    setCartId,
+    setCartPricing,
+    setCartError,
+    setSelectedPaymentProviderId,
+    setSelectedShippingOptionId,
+    setStripeCheckout,
+  ]);
+
+  const ensureServerCartFromGuestCart = useCallback(
+    async (currentCartId: string | null) => {
       if (currentCartId) {
         return currentCartId;
       }
@@ -514,15 +550,18 @@ export function useCheckout() {
 
       setCartId(activeCart.id);
       return activeCart.id;
-    }
+    },
+    [cart, setCartId]
+  );
 
-    try {
+  const prepareCheckout = useCallback(
+    async (provider?: { id: string; name?: string }) => {
       setCartError(null);
       if (!cart.length) {
         throw new Error("Giỏ hàng đang trống.");
       }
 
-      await withSingleAuthRetry(
+      return await withSingleAuthRetry(
         async () => {
           const activeCartId = await ensureServerCartFromGuestCart(cartId);
           const hydratedAddresses = await hydrateCheckoutAddresses();
@@ -533,8 +572,8 @@ export function useCheckout() {
           if (
             !resolvedShippingAddress?.address ||
             !resolvedShippingAddress?.name ||
-            !resolvedShippingAddress?.city
-            || !resolvedShippingAddress?.postalCode
+            !resolvedShippingAddress?.city ||
+            !resolvedShippingAddress?.postalCode
           ) {
             throw new Error("Vui lòng nhập địa chỉ nhận hàng trước khi thanh toán.");
           }
@@ -548,8 +587,12 @@ export function useCheckout() {
               console.warn("Cannot parse saved user info in checkout:", error);
             }
           }
-          const normalizedPhone = (resolvedShippingAddress.phone || savedUserInfo?.phone || "").trim();
-          const normalizedName = (resolvedShippingAddress.name || savedUserInfo?.name || "Khách hàng")
+          const normalizedPhone = (
+            resolvedShippingAddress.phone || savedUserInfo?.phone || ""
+          ).trim();
+          const normalizedName = (
+            resolvedShippingAddress.name || savedUserInfo?.name || "Khách hàng"
+          )
             .trim()
             .split(/\s+/)
             .filter(Boolean);
@@ -572,12 +615,14 @@ export function useCheckout() {
           const nextBillingAddress = resolvedBillingAddress
             ? {
                 ...resolvedBillingAddress,
-                countryCode: resolvedBillingAddress.countryCode || nextShippingAddress.countryCode,
+                countryCode:
+                  resolvedBillingAddress.countryCode || nextShippingAddress.countryCode,
               }
             : nextShippingAddress;
 
           const currentCustomer = await getCurrentCustomer();
-          const customerEmail = currentCustomer?.email?.trim() || savedUserInfo?.email?.trim() || "";
+          const customerEmail =
+            currentCustomer?.email?.trim() || savedUserInfo?.email?.trim() || "";
           if (!customerEmail) {
             throw new Error("Không tìm thấy email khách hàng để tiếp tục thanh toán.");
           }
@@ -598,7 +643,7 @@ export function useCheckout() {
             checkoutCart = await addShippingMethod(activeCartId, selectedShippingOptionId);
           }
 
-          let paymentProviderId = selectedPaymentProviderId;
+          let paymentProviderId = provider?.id || selectedPaymentProviderId;
           if (!paymentProviderId) {
             const providers = await listCartPaymentProviders(
               activeCartId,
@@ -610,33 +655,168 @@ export function useCheckout() {
             throw new Error("Không có phương thức thanh toán khả dụng.");
           }
 
-          await initializeCartPaymentSessions(activeCartId, paymentProviderId);
-          await completeCart(activeCartId);
+          // Normalize provider ID: remove 'pp_' prefix if present
+          // Server might return 'pp_stripe' but expects 'stripe' in the request
+          const normalizedProviderId = paymentProviderId
+            .replace(/^pp_/, "")
+            .toLowerCase();
+
+          return {
+            activeCartId,
+            checkoutCart,
+            paymentProviderId: normalizedProviderId,
+            isStripeProvider:
+              /stripe/i.test(`${normalizedProviderId} ${provider?.name || ""}`),
+          };
         },
         async () => {
           await requestInfo();
         }
       );
+    },
+    [
+      billingAddress,
+      cart.length,
+      cartId,
+      ensureServerCartFromGuestCart,
+      requestInfo,
+      selectedPaymentProviderId,
+      selectedShippingOptionId,
+      shippingAddress,
+      hydrateCheckoutAddresses,
+      setCartError,
+    ]
+  );
 
-      setCart([]);
-      setCartId(null);
-      setSelectedShippingOptionId(null);
-      setSelectedPaymentProviderId(null);
-      setCartPricing(null);
-      refreshNewOrders();
-      navigate("/orders", {
-        viewTransition: true,
-      });
-      toast.success("Đặt hàng thành công. Cảm ơn bạn đã mua hàng!");
-    } catch (error) {
-      console.warn(error);
-      const message =
-        error instanceof Error && error.message
-          ? error.message
-          : "Thanh toán thất bại. Vui lòng thử lại.";
-      setCartError(message);
-      toast.error(message);
-    }
+  const startPayment = useCallback(
+    async (provider?: { id: string; name?: string }) => {
+      try {
+        setCartError(null);
+        if (!provider) {
+          throw new Error("Vui lòng chọn phương thức thanh toán.");
+        }
+
+        const checkoutData = await prepareCheckout(provider);
+        if (checkoutData.isStripeProvider) {
+          setStripeCheckout({
+            paymentCollectionId: null,
+            clientSecret: null,
+            providerId: checkoutData.paymentProviderId,
+            status: "preparing",
+            error: null,
+          });
+
+          const paymentSessionResponse = await initializeCartPaymentSessions(
+            checkoutData.activeCartId,
+            checkoutData.paymentProviderId
+          );
+          const paymentCollection = paymentSessionResponse.payment_collection || null;
+          const clientSecret = extractPaymentCollectionClientSecret(
+            paymentCollection,
+            checkoutData.paymentProviderId
+          );
+
+          if (!clientSecret) {
+            throw new Error("Không lấy được client_secret từ Stripe session.");
+          }
+
+          setStripeCheckout({
+            paymentCollectionId: paymentCollection?.id || null,
+            clientSecret,
+            providerId: checkoutData.paymentProviderId,
+            status: "ready",
+            error: null,
+          });
+
+          return {
+            mode: "stripe" as const,
+            clientSecret,
+            paymentCollectionId: paymentCollection?.id || null,
+            cartId: checkoutData.activeCartId,
+          };
+        }
+
+        await initializeCartPaymentSessions(
+          checkoutData.activeCartId,
+          checkoutData.paymentProviderId
+        );
+        await completeCart(checkoutData.activeCartId);
+        resetCheckoutStateAfterSuccess();
+        return { mode: "completed" as const };
+      } catch (error) {
+        console.warn(error);
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : "Thanh toán thất bại. Vui lòng thử lại.";
+        setCartError(message);
+        setStripeCheckout((current) => ({
+          ...current,
+          status: "error",
+          error: message,
+        }));
+        toast.error(message);
+        throw error;
+      }
+    },
+    [
+      completeCart,
+      prepareCheckout,
+      resetCheckoutStateAfterSuccess,
+      setCartError,
+      setStripeCheckout,
+    ]
+  );
+
+  const completeStripePayment = useCallback(
+    async (cartIdOverride?: string | null) => {
+      try {
+        const activeCartId = cartIdOverride || cartId;
+        if (!activeCartId) {
+          throw new Error("Giỏ hàng không còn tồn tại.");
+        }
+
+        setStripeCheckout((current) => ({
+          ...current,
+          status: "confirming",
+          error: null,
+        }));
+
+        await completeCart(activeCartId);
+        resetCheckoutStateAfterSuccess();
+      } catch (error) {
+        console.warn(error);
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : "Thanh toán Stripe thất bại. Vui lòng thử lại.";
+        setCartError(message);
+        setStripeCheckout((current) => ({
+          ...current,
+          status: "error",
+          error: message,
+        }));
+        toast.error(message);
+        throw error;
+      }
+    },
+    [cartId, completeCart, resetCheckoutStateAfterSuccess, setCartError, setStripeCheckout]
+  );
+
+  const resetStripeCheckout = useCallback(() => {
+    setStripeCheckout({
+      paymentCollectionId: null,
+      clientSecret: null,
+      providerId: null,
+      status: "idle",
+      error: null,
+    });
+  }, [setStripeCheckout]);
+
+  return {
+    startPayment,
+    completeStripePayment,
+    resetStripeCheckout,
   };
 }
 
