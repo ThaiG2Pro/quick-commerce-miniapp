@@ -307,12 +307,19 @@ function StripeCheckoutFormInner({
             redirect: "if_required",
           });
 
+          console.log("[Stripe Payment] confirmPayment result:", {
+            error: result.error?.message,
+            paymentIntentStatus: result.paymentIntent?.status,
+            paymentIntentId: result.paymentIntent?.id,
+          });
+
           if (result.error) {
             setMessage(result.error.message || "Thanh toán Stripe thất bại.");
             return;
           }
 
           if (result.paymentIntent?.status === "succeeded") {
+            console.log("[Stripe Payment] Payment succeeded, calling onComplete");
             await onComplete();
             return;
           }

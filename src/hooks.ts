@@ -770,6 +770,8 @@ export function useCheckout() {
           throw new Error("Giỏ hàng không còn tồn tại.");
         }
 
+        console.log("[Stripe Payment] Completing payment for cart:", activeCartId);
+
         setStripeCheckout((current) => ({
           ...current,
           status: "confirming",
@@ -777,13 +779,14 @@ export function useCheckout() {
         }));
 
         await completeCart(activeCartId);
+        console.log("[Stripe Payment] Cart completed successfully");
         resetCheckoutStateAfterSuccess();
       } catch (error) {
-        console.warn(error);
+        console.warn("[Stripe Payment] Error completing payment:", error);
         const message =
           error instanceof Error && error.message
             ? error.message
-            : "Thanh toán Stripe thất bại. Vui lòng thử lại.";
+            : "Thanh toán Stripe thất bại. Vui lòng thử lại";
         setCartError(message);
         setStripeCheckout((current) => ({
           ...current,
