@@ -304,7 +304,7 @@ function StripeCheckoutFormInner({
             confirmParams: {
               return_url: window.location.href,
             },
-            redirect: "if_required",
+            redirect: "always",
           });
 
           console.log("[Stripe Payment] confirmPayment result:", {
@@ -314,6 +314,7 @@ function StripeCheckoutFormInner({
           });
 
           if (result.error) {
+            console.error("[Stripe Payment] Error:", result.error.message);
             setMessage(result.error.message || "Thanh toán Stripe thất bại.");
             return;
           }
@@ -325,12 +326,17 @@ function StripeCheckoutFormInner({
           }
 
           if (result.paymentIntent?.status) {
+            console.warn(
+              "[Stripe Payment] Unexpected status:",
+              result.paymentIntent.status
+            );
             setMessage(
               `Stripe trả về trạng thái ${result.paymentIntent.status}. Vui lòng thử lại.`
             );
             return;
           }
 
+          console.warn("[Stripe Payment] No payment intent returned");
           setMessage("Stripe đang xử lý thanh toán. Vui lòng chờ chuyển hướng.");
         } catch (error) {
           const errorMessage =
