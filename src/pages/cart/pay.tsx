@@ -299,12 +299,13 @@ function StripeCheckoutFormInner({
         setLoading(true);
         setMessage(null);
         try {
+          console.log("[Stripe Payment] Starting confirmPayment...");
           const result = await stripe.confirmPayment({
             elements,
             confirmParams: {
               return_url: window.location.href,
             },
-            redirect: "always",
+            redirect: "if_required",
           });
 
           console.log("[Stripe Payment] confirmPayment result:", {
@@ -316,6 +317,7 @@ function StripeCheckoutFormInner({
           if (result.error) {
             console.error("[Stripe Payment] Error:", result.error.message);
             setMessage(result.error.message || "Thanh toán Stripe thất bại.");
+            setLoading(false);
             return;
           }
 
@@ -333,11 +335,13 @@ function StripeCheckoutFormInner({
             setMessage(
               `Stripe trả về trạng thái ${result.paymentIntent.status}. Vui lòng thử lại.`
             );
+            setLoading(false);
             return;
           }
 
           console.warn("[Stripe Payment] No payment intent returned");
           setMessage("Stripe đang xử lý thanh toán. Vui lòng chờ chuyển hướng.");
+          setLoading(false);
         } catch (error) {
           const errorMessage =
             error instanceof Error && error.message
