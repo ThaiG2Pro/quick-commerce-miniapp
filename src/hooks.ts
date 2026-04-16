@@ -24,6 +24,7 @@ import {
   selectedPaymentProviderIdState,
   selectedShippingOptionIdState,
   stripeCheckoutState,
+  qrCheckoutState,
   shippingAddressState,
   userInfoKeyState,
   userInfoState,
@@ -41,6 +42,7 @@ import {
   completeCart,
   createCart,
   extractPaymentCollectionClientSecret,
+  extractQRCodeUrl,
   getCurrentCustomer,
   getCurrentCustomerAddress,
   getCart,
@@ -489,6 +491,7 @@ export function useCheckout() {
     selectedPaymentProviderIdState
   );
   const [, setStripeCheckout] = useAtom(stripeCheckoutState);
+  const [, setQRCheckout] = useAtom(qrCheckoutState);
   const [selectedShippingOptionId, setSelectedShippingOptionId] = useAtom(
     selectedShippingOptionIdState
   );
@@ -515,6 +518,11 @@ export function useCheckout() {
       status: "idle",
       error: null,
     });
+    setQRCheckout({
+      qrCodeUrl: null,
+      status: "idle",
+      error: null,
+    });
     setCartPricing(null);
     refreshNewOrders();
     navigate("/orders", {
@@ -531,6 +539,7 @@ export function useCheckout() {
     setSelectedPaymentProviderId,
     setSelectedShippingOptionId,
     setStripeCheckout,
+    setQRCheckout,
   ]);
 
   const ensureServerCartFromGuestCart = useCallback(
@@ -672,6 +681,8 @@ export function useCheckout() {
             paymentProviderId,
             isStripeProvider:
               /stripe/i.test(`${paymentProviderId} ${provider?.name || ""}`),
+            isQRProvider:
+              /qr/i.test(`${paymentProviderId} ${provider?.name || ""}`),
           };
         },
         async () => {
@@ -741,6 +752,36 @@ export function useCheckout() {
           };
         }
 
+        if (checkoutData.isQRProvider) {
+          setQRCheckout({
+            qrCodeUrl: null,
+            status: "preparing",
+            error: null,
+          });
+
+          const paymentSessionResponse = await initializeCartPaymentSessions(
+            checkoutData.activeCartId,
+            checkoutData.paymentProviderId
+          );
+
+          const qrCodeUrl = extractQRCodeUrl(paymentSessionResponse);
+          if (!qrCodeUrl) {
+            throw new Error("Không nhận được mã QR từ server");
+          }
+
+          setQRCheckout({
+            qrCodeUrl,
+            status: "ready",
+            error: null,
+          });
+
+          return {
+            mode: "qr" as const,
+            qrCodeUrl,
+            cartId: checkoutData.activeCartId,
+          };
+        }
+
         await initializeCartPaymentSessions(
           checkoutData.activeCartId,
           checkoutData.paymentProviderId
@@ -760,6 +801,11 @@ export function useCheckout() {
           status: "error",
           error: message,
         }));
+        setQRCheckout((current) => ({
+          ...current,
+          status: "error",
+          error: message,
+        }));
         toast.error(message);
         throw error;
       }
@@ -770,6 +816,7 @@ export function useCheckout() {
       resetCheckoutStateAfterSuccess,
       setCartError,
       setStripeCheckout,
+      setQRCheckout,
     ]
   );
 
@@ -811,6 +858,44 @@ export function useCheckout() {
     [cartId, completeCart, resetCheckoutStateAfterSuccess, setCartError, setStripeCheckout]
   );
 
+  const completeQRPayment = useCallback(
+    async (cartIdOverride?: string | null) => {
+      try {
+        const activeCartId = cartIdOverride || cartId;
+        if (!activeCartId) {
+          throw new Error("Giỏ hàng không còn tồn tại.");
+        }
+
+        console.log("[QR Payment] Completing payment for cart:", activeCartId);
+
+        setQRCheckout((current) => ({
+          ...current,
+          status: "confirming",
+          error: null,
+        }));
+
+        await completeCart(activeCartId);
+        console.log("[QR Payment] Cart completed successfully");
+        resetCheckoutStateAfterSuccess();
+      } catch (error) {
+        console.warn("[QR Payment] Error completing payment:", error);
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : "Thanh toán QR thất bại. Vui lòng thử lại";
+        setCartError(message);
+        setQRCheckout((current) => ({
+          ...current,
+          status: "error",
+          error: message,
+        }));
+        toast.error(message);
+        throw error;
+      }
+    },
+    [cartId, completeCart, resetCheckoutStateAfterSuccess, setCartError, setQRCheckout]
+  );
+
   const resetStripeCheckout = useCallback(() => {
     setStripeCheckout({
       paymentCollectionId: null,
@@ -821,10 +906,20 @@ export function useCheckout() {
     });
   }, [setStripeCheckout]);
 
+  const resetQRCheckout = useCallback(() => {
+    setQRCheckout({
+      qrCodeUrl: null,
+      status: "idle",
+      error: null,
+    });
+  }, [setQRCheckout]);
+
   return {
     startPayment,
     completeStripePayment,
+    completeQRPayment,
     resetStripeCheckout,
+    resetQRCheckout,
   };
 }
 

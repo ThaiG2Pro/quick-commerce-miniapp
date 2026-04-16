@@ -500,6 +500,19 @@ export function extractPaymentCollectionClientSecret(
   );
 }
 
+export function extractQRCodeUrl(
+  paymentSessionResponse: PaymentSessionInitResponse
+): string | undefined {
+  const paymentCollection = paymentSessionResponse.payment_collection;
+  const session = paymentCollection?.payment_sessions?.[0];
+
+  if (!session?.data) {
+    return undefined;
+  }
+
+  return (session.data as { qr_code_url?: string }).qr_code_url;
+}
+
 /**
  * Khởi tạo payment sessions cho cart.
  */

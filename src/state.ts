@@ -270,6 +270,18 @@ export const stripeCheckoutState = atom<StripeCheckoutState>({
   error: null,
 });
 
+export type QRCheckoutState = {
+  qrCodeUrl: string | null;
+  status: "idle" | "preparing" | "ready" | "confirming" | "error";
+  error: string | null;
+};
+
+export const qrCheckoutState = atom<QRCheckoutState>({
+  qrCodeUrl: null,
+  status: "idle",
+  error: null,
+});
+
 function getErrorStatusCode(error: unknown): number | undefined {
   if (typeof error !== "object" || error === null) {
     return undefined;

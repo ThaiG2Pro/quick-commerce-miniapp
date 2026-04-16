@@ -7,6 +7,7 @@ import {
   selectedPaymentProviderIdState,
   selectedShippingOptionIdState,
   stripeCheckoutState,
+  qrCheckoutState,
 } from "@/state";
 import { formatPrice } from "@/utils/format";
 import { loadStripe } from "@stripe/stripe-js";
@@ -32,6 +33,63 @@ function isStripeProvider(provider?: { id: string; name?: string } | null) {
   return /stripe/i.test(`${provider.id} ${provider.name || ""}`);
 }
 
+function isQRProvider(provider?: { id: string; name?: string } | null) {
+  if (!provider) {
+    return false;
+  }
+
+  return /qr/i.test(`${provider.id} ${provider.name || ""}`);
+}
+
+function QRCodeDisplay({
+  qrCodeUrl,
+  onPaymentComplete,
+}: {
+  qrCodeUrl: string;
+  onPaymentComplete: () => Promise<void>;
+}) {
+  const [message, setMessage] = useState("Quét mã QR để thanh toán...");
+  const [isCompleting, setIsCompleting] = useState(false);
+
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+
+    const run = async () => {
+      setMessage("Đang xác nhận thanh toán...");
+      setIsCompleting(true);
+      try {
+        await onPaymentComplete();
+      } catch (error) {
+        setMessage("Lỗi: " + (error instanceof Error ? error.message : "Không xác định"));
+        setIsCompleting(false);
+      }
+    };
+
+    timeout = setTimeout(() => {
+      run().catch(console.error);
+    }, 2000);
+
+    return () => clearTimeout(timeout);
+  }, [onPaymentComplete]);
+
+  return (
+    <div className="px-4 pb-4 space-y-3">
+      <div className="text-xs text-subtitle text-center mb-2">{message}</div>
+      <div className="flex justify-center bg-white p-4 rounded-lg">
+        <img
+          src={qrCodeUrl}
+          alt="QR Code"
+          className="w-48 h-48"
+          onError={() => setMessage("Không thể tải mã QR")}
+        />
+      </div>
+      {isCompleting && (
+        <div className="text-xs text-subtitle text-center">Đang xác nhận... ⏳</div>
+      )}
+    </div>
+  );
+}
+
 export default function Pay() {
   const {
     subtotalAmount,
@@ -49,11 +107,14 @@ export default function Pay() {
   const selectedPaymentProviderId = useAtomValue(selectedPaymentProviderIdState);
   const providers = useAtomValue(paymentProvidersState);
   const stripeCheckout = useAtomValue(stripeCheckoutState);
+  const qrCheckout = useAtomValue(qrCheckoutState);
   const [searchParams] = useSearchParams();
   const {
     startPayment,
     completeStripePayment,
+    completeQRPayment,
     resetStripeCheckout,
+    resetQRCheckout,
   } = useCheckout();
   const [paying, setPaying] = useState(false);
   const selectedPaymentProvider = useMemo(
@@ -65,11 +126,16 @@ export default function Pay() {
   );
   const redirectClientSecret = searchParams.get("payment_intent_client_secret");
   const isStripeSelected = isStripeProvider(selectedPaymentProvider);
+  const isQRSelected = isQRProvider(selectedPaymentProvider);
   const canRenderStripeForm =
     isStripeSelected &&
     stripeCheckout.status === "ready" &&
     stripeCheckout.clientSecret !== null &&
     stripeCheckout.providerId === selectedPaymentProvider?.id;
+  const canRenderQRCode =
+    isQRSelected &&
+    qrCheckout.status === "ready" &&
+    qrCheckout.qrCodeUrl !== null;
   const canHandleStripeReturn = Boolean(redirectClientSecret);
 
   useEffect(() => {
@@ -77,6 +143,12 @@ export default function Pay() {
       resetStripeCheckout();
     }
   }, [isStripeSelected, resetStripeCheckout, stripeCheckout.status]);
+
+  useEffect(() => {
+    if (!isQRSelected && qrCheckout.status !== "idle") {
+      resetQRCheckout();
+    }
+  }, [isQRSelected, resetQRCheckout, qrCheckout.status]);
 
   return (
     <div className="flex-none bg-section">
@@ -139,6 +211,10 @@ export default function Pay() {
         <div className="px-4 pb-2 text-xs text-red-600">{stripeCheckout.error}</div>
       )}
 
+      {qrCheckout.error && (
+        <div className="px-4 pb-2 text-xs text-red-600">{qrCheckout.error}</div>
+      )}
+
       {canHandleStripeReturn ? (
         <StripeRedirectReturn
           clientSecret={redirectClientSecret}
@@ -149,6 +225,11 @@ export default function Pay() {
           clientSecret={stripeCheckout.clientSecret}
           onComplete={completeStripePayment}
           onCancel={resetStripeCheckout}
+        />
+      ) : canRenderQRCode ? (
+        <QRCodeDisplay
+          qrCodeUrl={qrCheckout.qrCodeUrl}
+          onPaymentComplete={completeQRPayment}
         />
       ) : (
         <div className="flex items-center py-2 px-4">
@@ -173,7 +254,7 @@ export default function Pay() {
               !selectedPaymentProvider
             }
           >
-            {paying || stripeCheckout.status === "preparing"
+            {paying || stripeCheckout.status === "preparing" || qrCheckout.status === "preparing"
               ? "Đang xử lý..."
               : !selectedPaymentProvider
                 ? "Đang tải phương thức..."

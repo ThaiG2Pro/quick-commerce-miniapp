@@ -181,18 +181,26 @@ function ShippingOptions() {
   );
   const applyShippingOption = useSetAtom(selectShippingOptionState);
   const cartMutating = useAtomValue(cartMutatingState);
+  const shippingOnlyOptions = useMemo(() => {
+    const pickupOption = pickPreferredPickupOption(shippingOptions);
+    if (!pickupOption) {
+      return shippingOptions;
+    }
+    const filtered = shippingOptions.filter((option) => option.id !== pickupOption.id);
+    return filtered.length ? filtered : shippingOptions;
+  }, [shippingOptions]);
 
   const effectiveSelectedId = useMemo(() => {
     if (
       selectedShippingOptionId &&
-      shippingOptions.some((option) => option.id === selectedShippingOptionId)
+      shippingOnlyOptions.some((option) => option.id === selectedShippingOptionId)
     ) {
       return selectedShippingOptionId;
     }
     return null;
-  }, [selectedShippingOptionId, shippingOptions]);
+  }, [selectedShippingOptionId, shippingOnlyOptions]);
 
-  if (!shippingOptions.length) {
+  if (!shippingOnlyOptions.length) {
     return (
       <div className="px-4 pb-4 text-xs text-subtitle">
         Chưa có phương thức vận chuyển khả dụng cho giỏ hàng hiện tại.
@@ -204,7 +212,7 @@ function ShippingOptions() {
     <div className="px-4 pb-4 space-y-2">
       <div className="text-xs text-subtitle">Chọn phương thức vận chuyển</div>
       <div className="space-y-2">
-        {shippingOptions.map((option) => {
+        {shippingOnlyOptions.map((option) => {
           const isSelected = option.id === effectiveSelectedId;
           return (
             <button
