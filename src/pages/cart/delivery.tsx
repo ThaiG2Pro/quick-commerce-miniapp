@@ -13,6 +13,8 @@ import {
 import {
   cartMutatingState,
   deliveryModeState,
+  pickPreferredPickupOption,
+  pickPreferredShippingOption,
   selectedShippingOptionIdState,
   selectedStationState,
   selectShippingOptionState,
@@ -74,6 +76,10 @@ function Delivery() {
   const hydrateCheckoutAddresses = useHydrateCheckoutAddresses();
 
   useEffect(() => {
+    setSelectedDeliveryMode("pickup");
+  }, [setSelectedDeliveryMode]);
+
+  useEffect(() => {
     void hydrateCheckoutAddresses();
   }, [hydrateCheckoutAddresses]);
 
@@ -108,6 +114,9 @@ function Delivery() {
           </button>
         ))}
       </div>
+      <Suspense fallback={null}>
+        <AutoApplyDeliveryShippingOption />
+      </Suspense>
       <HorizontalDivider />
       {selectedDeliveryMode === "shipping" ? (
         <>
@@ -123,6 +132,46 @@ function Delivery() {
       )}
     </Section>
   );
+}
+
+function AutoApplyDeliveryShippingOption() {
+  const selectedDeliveryMode = useAtomValue(deliveryModeState);
+  const shippingOptions = useAtomValue(shippingOptionsState);
+  const [selectedShippingOptionId, setSelectedShippingOptionId] = useAtom(
+    selectedShippingOptionIdState
+  );
+  const applyShippingOption = useSetAtom(selectShippingOptionState);
+  const cartMutating = useAtomValue(cartMutatingState);
+
+  const targetOption = useMemo(() => {
+    if (selectedDeliveryMode === "pickup") {
+      return pickPreferredPickupOption(shippingOptions);
+    }
+    return pickPreferredShippingOption(shippingOptions);
+  }, [selectedDeliveryMode, shippingOptions]);
+
+  useEffect(() => {
+    if (!targetOption || cartMutating || selectedShippingOptionId === targetOption.id) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        await applyShippingOption(targetOption.id);
+        setSelectedShippingOptionId(targetOption.id);
+      } catch (error) {
+        console.error("Failed to auto apply shipping option:", error);
+      }
+    })();
+  }, [
+    applyShippingOption,
+    cartMutating,
+    selectedShippingOptionId,
+    setSelectedShippingOptionId,
+    targetOption,
+  ]);
+
+  return null;
 }
 
 function ShippingOptions() {
@@ -142,13 +191,6 @@ function ShippingOptions() {
     }
     return null;
   }, [selectedShippingOptionId, shippingOptions]);
-
-  useEffect(() => {
-    if (effectiveSelectedId || !shippingOptions.length) {
-      return;
-    }
-    setSelectedShippingOptionId(shippingOptions[0].id);
-  }, [effectiveSelectedId, selectedShippingOptionId, setSelectedShippingOptionId, shippingOptions]);
 
   if (!shippingOptions.length) {
     return (

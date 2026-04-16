@@ -6,14 +6,14 @@ import { PageSkeleton } from "./skeleton";
 import { Toaster } from "react-hot-toast";
 import { ScrollRestoration } from "./scroll-restoration";
 import FloatingCartPreview from "./floating-cart-preview";
-import { useInitializeCart } from "@/hooks";
+import { useBootstrapStorefront } from "@/hooks";
 
 export default function Layout() {
-  const initializeCart = useInitializeCart();
+  const bootstrapStorefront = useBootstrapStorefront();
 
   useEffect(() => {
-    initializeCart();
-  }, [initializeCart]);
+    bootstrapStorefront();
+  }, [bootstrapStorefront]);
 
   return (
     <div className="w-screen h-screen flex flex-col bg-section text-foreground">

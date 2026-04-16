@@ -66,6 +66,11 @@ import {
 
 const PRODUCT_QUERY_FIELDS =
   "+*variants,+*variants.options,+*variants.prices,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+*options,+*tags,+*type,+*categories,+*images,+*description,+*metadata";
+type MedusaRegionLite = {
+  id: string;
+  name?: string;
+  currency_code?: string;
+};
 const DEFAULT_STOREFRONT_PROFILE: StorefrontProfile = {
   shopName: getConfig((config) => config.template.shopName),
   shopAddress: getConfig((config) => config.template.shopAddress),
@@ -232,6 +237,10 @@ export const cartIdState = atomWithStorage<string | null>(
   CONFIG.STORAGE_KEYS.CART_ID,
   null
 );
+export const regionsCacheState = atom<MedusaRegionLite[]>([]);
+export const shippingOptionsCacheState = atom<ShippingOption[]>([]);
+export const shippingOptionsCacheCartIdState = atom<string | null>(null);
+export const storefrontBootstrapStatusState = atom<"idle" | "running" | "done">("idle");
 export const cartInitializingState = atom(false);
 export const cartMutatingState = atom(false);
 export const cartPromotionMutatingState = atom(false);
@@ -300,6 +309,8 @@ export const initializeCartState = atom(null, async (get, set) => {
   if (!cartId) {
     set(cartState, []);
     set(cartPricingState, null);
+    set(shippingOptionsCacheState, []);
+    set(shippingOptionsCacheCartIdState, null);
     set(cartErrorState, null);
     return;
   }
@@ -315,12 +326,15 @@ export const initializeCartState = atom(null, async (get, set) => {
       selectedShippingOptionIdState,
       medusaCart.shipping_methods?.[0]?.shipping_option?.id ?? null
     );
+    set(shippingOptionsCacheCartIdState, cartId);
   } catch (error) {
     const status = getErrorStatusCode(error);
     if (status === 404) {
       set(cartIdState, null);
       set(cartState, []);
       set(cartPricingState, null);
+      set(shippingOptionsCacheState, []);
+      set(shippingOptionsCacheCartIdState, null);
       set(selectedShippingOptionIdState, null);
       set(cartErrorState, "Giỏ hàng không còn tồn tại. Đã tạo lại trạng thái giỏ.");
       return;
@@ -341,6 +355,8 @@ export const refreshCartState = atom(null, async (get, set) => {
   if (!cartId) {
     set(cartState, []);
     set(cartPricingState, null);
+    set(shippingOptionsCacheState, []);
+    set(shippingOptionsCacheCartIdState, null);
     return;
   }
 
@@ -351,6 +367,7 @@ export const refreshCartState = atom(null, async (get, set) => {
     selectedShippingOptionIdState,
     medusaCart.shipping_methods?.[0]?.shipping_option?.id ?? null
   );
+  set(shippingOptionsCacheCartIdState, cartId);
 });
 
 export const addOrUpdateCartItemState = atom(
@@ -428,7 +445,11 @@ export const addOrUpdateCartItemState = atom(
 
       let currentCartId = get(cartIdState);
       if (!currentCartId) {
-        const regions = await getRegions();
+        let regions = get(regionsCacheState);
+        if (!regions.length) {
+          regions = await getRegions();
+          set(regionsCacheState, regions as MedusaRegionLite[]);
+        }
         const defaultRegionId = regions[0]?.id;
         if (!defaultRegionId) {
           throw new Error(
@@ -479,6 +500,7 @@ export const addOrUpdateCartItemState = atom(
         selectedShippingOptionIdState,
         updatedCart.shipping_methods?.[0]?.shipping_option?.id ?? null
       );
+      set(shippingOptionsCacheCartIdState, currentCartId);
     } catch (error) {
       console.error("Failed cart mutation:", error);
       set(
@@ -516,13 +538,50 @@ export const cartTotalState = atom((get) => {
   };
 });
 
-export const shippingOptionsState = atom(async (get) => {
-  const cartId = get(cartIdState);
-  const pricing = get(cartPricingState);
-  if (!cartId) {
-    return [] as ShippingOption[];
+function normalizeShippingOptionName(name?: string) {
+  return (name || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function isPickupShippingOption(option: ShippingOption) {
+  const normalizedName = normalizeShippingOptionName(option.name);
+  return (
+    normalizedName.includes("tu den lay") ||
+    normalizedName.includes("pickup")
+  );
+}
+
+export function pickPreferredShippingOption(options: ShippingOption[]) {
+  if (!options.length) {
+    return null;
   }
 
+  const nonPickupOptions = options.filter((option) => !isPickupShippingOption(option));
+  const shippingCandidates = nonPickupOptions.length ? nonPickupOptions : options;
+
+  const savingOption = shippingCandidates.find((option) =>
+    normalizeShippingOptionName(option.name).includes("giao tiet kiem")
+  );
+  if (savingOption) {
+    return savingOption;
+  }
+
+  return [...shippingCandidates].sort((a, b) => a.amount - b.amount)[0];
+}
+
+export function pickPreferredPickupOption(options: ShippingOption[]) {
+  if (!options.length) {
+    return null;
+  }
+
+  const pickupOption = options.find(isPickupShippingOption);
+  return pickupOption || null;
+}
+
+async function resolveShippingOptionsForCart(cartId: string, currencyCode?: string) {
   const options = await listCartShippingOptions(cartId);
   const calculatedPrices = await Promise.all(
     options.map(async (option) => {
@@ -545,7 +604,6 @@ export const shippingOptionsState = atom(async (get) => {
   );
 
   const amountMap = new Map(calculatedPrices);
-  const currencyCode = pricing?.currencyCode;
 
   return options
     .map((option) => {
@@ -562,6 +620,100 @@ export const shippingOptionsState = atom(async (get) => {
       } satisfies ShippingOption;
     })
     .filter((option): option is ShippingOption => option !== null);
+}
+
+export const prefetchShippingOptionsState = atom(
+  null,
+  async (get, set, explicitCartId?: string) => {
+    const cartId = explicitCartId || get(cartIdState);
+    if (!cartId) {
+      set(shippingOptionsCacheState, []);
+      set(shippingOptionsCacheCartIdState, null);
+      return [] as ShippingOption[];
+    }
+
+    const pricing = get(cartPricingState);
+    const options = await resolveShippingOptionsForCart(cartId, pricing?.currencyCode);
+    set(shippingOptionsCacheState, options);
+    set(shippingOptionsCacheCartIdState, cartId);
+    return options;
+  }
+);
+
+export const bootstrapStorefrontState = atom(null, async (get, set) => {
+  const status = get(storefrontBootstrapStatusState);
+  if (status === "running" || status === "done") {
+    return;
+  }
+
+  set(storefrontBootstrapStatusState, "running");
+  try {
+    let regions = get(regionsCacheState);
+    if (!regions.length) {
+      regions = (await getRegions()) as MedusaRegionLite[];
+      set(regionsCacheState, regions);
+    }
+
+    let cartId = get(cartIdState);
+    const hasStoredMedusaAuthToken =
+      typeof window !== "undefined" &&
+      Boolean(localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN));
+
+    if (!cartId && hasStoredMedusaAuthToken) {
+      const defaultRegionId = regions[0]?.id;
+      if (defaultRegionId) {
+        const createdCart = await createCart(defaultRegionId);
+        cartId = createdCart.id;
+        set(cartIdState, cartId);
+      }
+    }
+
+    if (cartId) {
+      try {
+        const medusaCart = await getCart(cartId);
+        set(cartState, transformMedusaCart(medusaCart));
+        set(cartPricingState, transformMedusaCartPricing(medusaCart));
+        set(
+          selectedShippingOptionIdState,
+          medusaCart.shipping_methods?.[0]?.shipping_option?.id ?? null
+        );
+        await set(prefetchShippingOptionsState, cartId);
+      } catch (error) {
+        const statusCode = getErrorStatusCode(error);
+        if (statusCode === 404) {
+          set(cartIdState, null);
+          set(cartState, []);
+          set(cartPricingState, null);
+          set(selectedShippingOptionIdState, null);
+          set(shippingOptionsCacheState, []);
+          set(shippingOptionsCacheCartIdState, null);
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    set(storefrontBootstrapStatusState, "done");
+  } catch (error) {
+    console.error("Failed storefront bootstrap:", error);
+    set(storefrontBootstrapStatusState, "idle");
+  }
+});
+
+export const shippingOptionsState = atom(async (get) => {
+  const cartId = get(cartIdState);
+  if (!cartId) {
+    return [] as ShippingOption[];
+  }
+
+  const cachedCartId = get(shippingOptionsCacheCartIdState);
+  const cachedOptions = get(shippingOptionsCacheState);
+  if (cachedCartId === cartId && cachedOptions.length) {
+    return cachedOptions;
+  }
+
+  const pricing = get(cartPricingState);
+  return await resolveShippingOptionsForCart(cartId, pricing?.currencyCode);
 });
 
 export const paymentProvidersState = atom(async (get) => {
@@ -570,7 +722,8 @@ export const paymentProvidersState = atom(async (get) => {
     return [] as PaymentProviderOption[];
   }
 
-  const providers = await listCartPaymentProviders(cartId);
+  const cachedRegionId = get(regionsCacheState)[0]?.id;
+  const providers = await listCartPaymentProviders(cartId, cachedRegionId);
   return providers.map((provider) => ({
     id: provider.id,
     name:
@@ -595,13 +748,15 @@ export const selectShippingOptionState = atom(
     set(cartMutatingState, true);
     set(cartErrorState, null);
     try {
-      const updatedCart = await addCartShippingMethod(cartId, shippingOptionId);
-      set(cartState, transformMedusaCart(updatedCart));
-      set(cartPricingState, transformMedusaCartPricing(updatedCart));
+      await addCartShippingMethod(cartId, shippingOptionId);
+      const refreshedCart = await getCart(cartId);
+      set(cartState, transformMedusaCart(refreshedCart));
+      set(cartPricingState, transformMedusaCartPricing(refreshedCart));
       set(
         selectedShippingOptionIdState,
-        updatedCart.shipping_methods?.[0]?.shipping_option?.id ?? shippingOptionId
+        refreshedCart.shipping_methods?.[0]?.shipping_option?.id ?? shippingOptionId
       );
+      await set(prefetchShippingOptionsState, cartId);
     } catch (error) {
       console.error("Failed to set shipping option:", error);
       set(
@@ -846,5 +1001,5 @@ export const orderDetailState = atomFamily((orderId: string) =>
 
 export const deliveryModeState = atomWithStorage<Delivery["type"]>(
   CONFIG.STORAGE_KEYS.DELIVERY,
-  "shipping"
+  "pickup"
 );

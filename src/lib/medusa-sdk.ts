@@ -422,16 +422,6 @@ export async function listCartShippingOptions(cartId: string) {
  */
 export async function listCartPaymentProviders(cartId: string, regionId?: string) {
   try {
-    const cartWithProviders = await sdk.store.cart.retrieve(cartId, {
-      fields: "+payment_providers",
-    });
-    const embeddedProviders =
-      (cartWithProviders.cart as { payment_providers?: Array<{ id: string; name?: string }> })
-        .payment_providers || [];
-    if (embeddedProviders.length > 0) {
-      return embeddedProviders;
-    }
-
     let resolvedRegionId = regionId;
     if (!resolvedRegionId) {
       const cartResponse = await sdk.store.cart.retrieve(cartId);

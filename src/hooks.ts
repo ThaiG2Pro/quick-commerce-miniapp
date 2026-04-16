@@ -15,10 +15,12 @@ import {
   cartPricingState,
   cartErrorState,
   addOrUpdateCartItemState,
+  bootstrapStorefrontState,
   initializeCartState,
   billingAddressState,
   ordersState,
   refreshCartState,
+  regionsCacheState,
   selectedPaymentProviderIdState,
   selectedShippingOptionIdState,
   stripeCheckoutState,
@@ -449,6 +451,14 @@ export function useInitializeCart() {
   }, [initializeCart]);
 }
 
+export function useBootstrapStorefront() {
+  const bootstrapStorefront = useSetAtom(bootstrapStorefrontState);
+
+  return useCallback(() => {
+    bootstrapStorefront();
+  }, [bootstrapStorefront]);
+}
+
 export function useRefreshCart() {
   const refreshCart = useSetAtom(refreshCartState);
 
@@ -482,6 +492,7 @@ export function useCheckout() {
   const [selectedShippingOptionId, setSelectedShippingOptionId] = useAtom(
     selectedShippingOptionIdState
   );
+  const cachedRegions = useAtomValue(regionsCacheState);
   const shippingAddress = useAtomValue(shippingAddressState);
   const billingAddress = useAtomValue(billingAddressState);
   const setCartPricing = useSetAtom(cartPricingState);
@@ -528,7 +539,7 @@ export function useCheckout() {
         return currentCartId;
       }
 
-      const regions = await getRegions();
+      const regions = cachedRegions.length ? cachedRegions : await getRegions();
       const defaultRegionId = regions[0]?.id;
       if (!defaultRegionId) {
         throw new Error(
@@ -551,7 +562,7 @@ export function useCheckout() {
       setCartId(activeCart.id);
       return activeCart.id;
     },
-    [cart, setCartId]
+    [cachedRegions, cart, setCartId]
   );
 
   const prepareCheckout = useCallback(
