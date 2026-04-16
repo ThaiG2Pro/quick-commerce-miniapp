@@ -655,18 +655,12 @@ export function useCheckout() {
             throw new Error("Không có phương thức thanh toán khả dụng.");
           }
 
-          // Normalize provider ID: remove 'pp_' prefix if present
-          // Server might return 'pp_stripe' but expects 'stripe' in the request
-          const normalizedProviderId = paymentProviderId
-            .replace(/^pp_/, "")
-            .toLowerCase();
-
           return {
             activeCartId,
             checkoutCart,
-            paymentProviderId: normalizedProviderId,
+            paymentProviderId,
             isStripeProvider:
-              /stripe/i.test(`${normalizedProviderId} ${provider?.name || ""}`),
+              /stripe/i.test(`${paymentProviderId} ${provider?.name || ""}`),
           };
         },
         async () => {
