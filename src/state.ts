@@ -40,6 +40,7 @@ import {
   createCart,
   getCategories,
   getCart,
+  getCurrentCustomerAddress,
   getProducts,
   getRegions,
   getLoyaltyProfile,
@@ -54,6 +55,7 @@ import {
   removeLineItem,
   removePromotionCodes,
   updateLineItem,
+  updateCartAddresses,
 } from "@/lib/medusa-sdk";
 import {
   normalizeMockCategory,
@@ -144,6 +146,22 @@ export const storefrontProfileStateUnwrapped = unwrap(
   (prev) => prev ?? DEFAULT_STOREFRONT_PROFILE
 );
 
+export function createPickupCheckoutAddress(): ShippingAddress {
+  return {
+    alias: "Tự đến lấy",
+    address: "Uit",
+    address2: undefined,
+    city: "Hồ Chí Minh",
+    province: undefined,
+    postalCode: "73000",
+    countryCode: "vn",
+    name: "Thái hàng",
+    phone: "0566464459",
+  };
+}
+
+export const pickupCheckoutEmail = "zalo_8563448330806889665@miniapp.local";
+
 export const loyaltyProfileState = atom(async (get) => {
   get(userInfoKeyState);
   const profile = await getLoyaltyProfile();
@@ -172,7 +190,10 @@ export const selectedTabIndexState = atom(0);
 
 export const categoriesState = atom(async () => {
   try {
-    const medusaCategories = await getCategories({ limit: 100 });
+    const medusaCategories = await getCategories({
+      limit: 100,
+      fields: "*product_category_image",
+    });
     return medusaCategories.map(transformCategory);
   } catch (error) {
     console.error("Failed to load categories from Medusa, falling back to mock:", error);
@@ -258,7 +279,7 @@ export type StripeCheckoutState = {
   paymentCollectionId: string | null;
   clientSecret: string | null;
   providerId: string | null;
-  status: "idle" | "preparing" | "ready" | "confirming" | "error";
+  status: "idle" | "preparing" | "ready" | "confirming" | "waiting_confirmation" | "error";
   error: string | null;
 };
 
@@ -272,12 +293,26 @@ export const stripeCheckoutState = atom<StripeCheckoutState>({
 
 export type QRCheckoutState = {
   qrCodeUrl: string | null;
-  status: "idle" | "preparing" | "ready" | "confirming" | "error";
+  transferAmount: number | null;
+  transferContent: string | null;
+  currencyCode: string | null;
+  cartId: string | null;
+  status:
+    | "idle"
+    | "preparing"
+    | "ready"
+    | "confirming"
+    | "waiting_confirmation"
+    | "error";
   error: string | null;
 };
 
 export const qrCheckoutState = atom<QRCheckoutState>({
   qrCodeUrl: null,
+  transferAmount: null,
+  transferContent: null,
+  currencyCode: null,
+  cartId: null,
   status: "idle",
   error: null,
 });
@@ -560,9 +595,15 @@ function normalizeShippingOptionName(name?: string) {
 
 function isPickupShippingOption(option: ShippingOption) {
   const normalizedName = normalizeShippingOptionName(option.name);
+  const normalizedDescription = normalizeShippingOptionName(option.description);
   return (
     normalizedName.includes("tu den lay") ||
-    normalizedName.includes("pickup")
+    normalizedName.includes("pickup") ||
+    normalizedName.includes("tai cua hang") ||
+    normalizedName.includes("nhan tai") ||
+    normalizedDescription.includes("pickup") ||
+    normalizedDescription.includes("tai cua hang") ||
+    normalizedDescription.includes("nhan tai")
   );
 }
 
@@ -571,17 +612,25 @@ export function pickPreferredShippingOption(options: ShippingOption[]) {
     return null;
   }
 
-  const nonPickupOptions = options.filter((option) => !isPickupShippingOption(option));
-  const shippingCandidates = nonPickupOptions.length ? nonPickupOptions : options;
+  const pickupOption = pickPreferredPickupOption(options);
+  const shippingCandidates = pickupOption
+    ? options.filter((option) => option.id !== pickupOption.id)
+    : options;
+  const nonPickupByLabel = shippingCandidates.filter(
+    (option) => !isPickupShippingOption(option)
+  );
+  const finalizedShippingCandidates = nonPickupByLabel.length
+    ? nonPickupByLabel
+    : shippingCandidates;
 
-  const savingOption = shippingCandidates.find((option) =>
+  const savingOption = finalizedShippingCandidates.find((option) =>
     normalizeShippingOptionName(option.name).includes("giao tiet kiem")
   );
   if (savingOption) {
     return savingOption;
   }
 
-  return [...shippingCandidates].sort((a, b) => a.amount - b.amount)[0];
+  return [...finalizedShippingCandidates].sort((a, b) => a.amount - b.amount)[0];
 }
 
 export function pickPreferredPickupOption(options: ShippingOption[]) {
@@ -590,7 +639,12 @@ export function pickPreferredPickupOption(options: ShippingOption[]) {
   }
 
   const pickupOption = options.find(isPickupShippingOption);
-  return pickupOption || null;
+  if (pickupOption) {
+    return pickupOption;
+  }
+
+  const zeroAmountOption = [...options].sort((a, b) => a.amount - b.amount)[0];
+  return zeroAmountOption ?? null;
 }
 
 async function resolveShippingOptionsForCart(cartId: string, currencyCode?: string) {
@@ -666,6 +720,33 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
       set(regionsCacheState, regions);
     }
 
+    try {
+      const customerAddress = await getCurrentCustomerAddress();
+      if (customerAddress) {
+        set(shippingAddressState, customerAddress);
+        set(billingAddressState, customerAddress);
+      } else {
+        set(shippingAddressState, undefined);
+        set(billingAddressState, undefined);
+      }
+    } catch (error) {
+      console.warn("Failed to prefetch customer address during bootstrap:", error);
+      set(shippingAddressState, undefined);
+      set(billingAddressState, undefined);
+    }
+
+    try {
+      await get(stationsState);
+    } catch (error) {
+      console.warn("Failed to prefetch stations during bootstrap:", error);
+    }
+
+    try {
+      await get(paymentProvidersState);
+    } catch (error) {
+      console.warn("Failed to prefetch payment providers during bootstrap:", error);
+    }
+
     let cartId = get(cartIdState);
     const hasStoredMedusaAuthToken =
       typeof window !== "undefined" &&
@@ -689,7 +770,11 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
           selectedShippingOptionIdState,
           medusaCart.shipping_methods?.[0]?.shipping_option?.id ?? null
         );
-        await set(prefetchShippingOptionsState, cartId);
+        try {
+          await set(prefetchShippingOptionsState, cartId);
+        } catch (prefetchError) {
+          console.warn("Failed to prefetch shipping options during bootstrap:", prefetchError);
+        }
       } catch (error) {
         const statusCode = getErrorStatusCode(error);
         if (statusCode === 404) {
@@ -729,13 +814,12 @@ export const shippingOptionsState = atom(async (get) => {
 });
 
 export const paymentProvidersState = atom(async (get) => {
-  const cartId = get(cartIdState);
-  if (!cartId) {
+  const regionId = get(regionsCacheState)[0]?.id;
+  if (!regionId) {
     return [] as PaymentProviderOption[];
   }
 
-  const cachedRegionId = get(regionsCacheState)[0]?.id;
-  const providers = await listCartPaymentProviders(cartId, cachedRegionId);
+  const providers = await listCartPaymentProviders(undefined, regionId);
   return providers.map((provider) => ({
     id: provider.id,
     name:
@@ -748,7 +832,16 @@ export const paymentProvidersState = atom(async (get) => {
 
 export const selectShippingOptionState = atom(
   null,
-  async (get, set, shippingOptionId: string) => {
+  async (
+    get,
+    set,
+    shippingOptionId: string,
+    payload?: {
+      shippingAddress?: ShippingAddress;
+      billingAddress?: ShippingAddress;
+      email?: string;
+    }
+  ) => {
     if (get(cartMutatingState)) {
       return;
     }
@@ -760,15 +853,21 @@ export const selectShippingOptionState = atom(
     set(cartMutatingState, true);
     set(cartErrorState, null);
     try {
-      await addCartShippingMethod(cartId, shippingOptionId);
-      const refreshedCart = await getCart(cartId);
-      set(cartState, transformMedusaCart(refreshedCart));
-      set(cartPricingState, transformMedusaCartPricing(refreshedCart));
+      if (payload?.shippingAddress) {
+        await updateCartAddresses(cartId, {
+          shippingAddress: payload.shippingAddress,
+          billingAddress: payload.billingAddress || payload.shippingAddress,
+          email: payload.email,
+        });
+      }
+
+      const updatedCart = await addCartShippingMethod(cartId, shippingOptionId);
+      set(cartState, transformMedusaCart(updatedCart));
+      set(cartPricingState, transformMedusaCartPricing(updatedCart));
       set(
         selectedShippingOptionIdState,
-        refreshedCart.shipping_methods?.[0]?.shipping_option?.id ?? shippingOptionId
+        updatedCart.shipping_methods?.[0]?.shipping_option?.id ?? shippingOptionId
       );
-      await set(prefetchShippingOptionsState, cartId);
     } catch (error) {
       console.error("Failed to set shipping option:", error);
       set(

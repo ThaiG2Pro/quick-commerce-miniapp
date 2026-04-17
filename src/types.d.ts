@@ -168,6 +168,9 @@ export interface MedusaCategory {
   handle: string;
   description?: string;
   parent_category_id?: string;
+  product_category_image?: {
+    url?: string;
+  } | null;
   metadata?: Record<string, any>;
 }
 

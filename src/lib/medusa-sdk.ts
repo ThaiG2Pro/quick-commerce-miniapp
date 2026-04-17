@@ -30,6 +30,24 @@ export const sdk = new Medusa({
 
 let cachedDefaultRegionId: string | null | undefined;
 const CALCULATED_PRICE_FIELD = "*variants.calculated_price";
+const ORDER_QUERY_FIELDS = [
+  "*shipping_address",
+  "*fulfillments",
+  "*items",
+  "+display_id",
+  "+status",
+  "+payment_status",
+  "+fulfillment_status",
+  "+created_at",
+  "+currency_code",
+  "+total",
+  "+metadata",
+  "+customer_note",
+  "+items.thumbnail",
+  "+items.title",
+  "+items.quantity",
+  "+items.unit_price",
+].join(",");
 
 async function getDefaultRegionId() {
   if (cachedDefaultRegionId !== undefined) {
@@ -239,6 +257,7 @@ export async function getCategories(params?: {
   limit?: number;
   offset?: number;
   parent_category_id?: string;
+  fields?: string;
 }) {
   try {
     // Medusa v2 uses 'category' not 'productCategory'
@@ -513,6 +532,78 @@ export function extractQRCodeUrl(
   return (session.data as { qr_code_url?: string }).qr_code_url;
 }
 
+function toQRNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function toQRString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export type QRPaymentDetails = {
+  qrCodeUrl?: string;
+  transferAmount?: number;
+  transferContent?: string;
+  currencyCode?: string;
+};
+
+export function extractQRPaymentDetails(
+  paymentSessionResponse: PaymentSessionInitResponse,
+  providerId?: string
+): QRPaymentDetails {
+  const paymentCollection = paymentSessionResponse.payment_collection;
+  const sessions = getPaymentSessions(paymentCollection);
+  const matchedSession =
+    (providerId &&
+      sessions.find((session) => session.provider_id === providerId)) ||
+    sessions[0];
+
+  if (!matchedSession) {
+    return {};
+  }
+
+  const sessionData =
+    (matchedSession.data as Record<string, unknown> | undefined) ||
+    (matchedSession.provider_data as Record<string, unknown> | undefined) ||
+    {};
+
+  const qrCodeUrl =
+    toQRString(sessionData.qr_code_url) ||
+    toQRString(sessionData.qrCodeUrl);
+  const transferAmount =
+    toQRNumber(sessionData.transfer_amount) ||
+    toQRNumber(sessionData.amount);
+  const transferContent =
+    toQRString(sessionData.transfer_content) ||
+    toQRString(sessionData.transferDescription) ||
+    toQRString(sessionData.content) ||
+    toQRString(sessionData.note) ||
+    toQRString(sessionData.description);
+  const currencyCode =
+    toQRString(sessionData.currency_code) ||
+    toQRString(sessionData.currency);
+
+  return {
+    qrCodeUrl,
+    transferAmount,
+    transferContent,
+    currencyCode: currencyCode?.toUpperCase(),
+  };
+}
+
 /**
  * Khởi tạo payment sessions cho cart.
  */
@@ -622,9 +713,13 @@ export async function completeCart(cartId: string) {
 export async function getOrders(params?: {
   limit?: number;
   offset?: number;
+  fields?: string;
 }) {
   try {
-    const response = await sdk.store.order.list(params);
+    const response = await sdk.store.order.list({
+      ...params,
+      fields: params?.fields || ORDER_QUERY_FIELDS,
+    });
     return response.orders;
   } catch (error) {
     console.error("Error fetching orders:", error);
@@ -637,7 +732,9 @@ export async function getOrders(params?: {
  */
 export async function getOrder(orderId: string) {
   try {
-    const response = await sdk.store.order.retrieve(orderId);
+    const response = await sdk.store.order.retrieve(orderId, {
+      fields: ORDER_QUERY_FIELDS,
+    });
     return response.order;
   } catch (error) {
     console.error("Error fetching order:", error);

@@ -16,8 +16,11 @@ import {
   cartErrorState,
   addOrUpdateCartItemState,
   bootstrapStorefrontState,
+  createPickupCheckoutAddress,
+  deliveryModeState,
   initializeCartState,
   billingAddressState,
+  pickupCheckoutEmail,
   ordersState,
   refreshCartState,
   regionsCacheState,
@@ -42,10 +45,9 @@ import {
   completeCart,
   createCart,
   extractPaymentCollectionClientSecret,
-  extractQRCodeUrl,
+  extractQRPaymentDetails,
   getCurrentCustomer,
   getCurrentCustomerAddress,
-  getCart,
   getRegions,
   initializeCartPaymentSessions,
   listCartPaymentProviders,
@@ -496,6 +498,7 @@ export function useCheckout() {
     selectedShippingOptionIdState
   );
   const cachedRegions = useAtomValue(regionsCacheState);
+  const deliveryMode = useAtomValue(deliveryModeState);
   const shippingAddress = useAtomValue(shippingAddressState);
   const billingAddress = useAtomValue(billingAddressState);
   const setCartPricing = useSetAtom(cartPricingState);
@@ -520,6 +523,10 @@ export function useCheckout() {
     });
     setQRCheckout({
       qrCodeUrl: null,
+      transferAmount: null,
+      transferContent: null,
+      currencyCode: null,
+      cartId: null,
       status: "idle",
       error: null,
     });
@@ -585,18 +592,25 @@ export function useCheckout() {
         async () => {
           const activeCartId = await ensureServerCartFromGuestCart(cartId);
           const hydratedAddresses = await hydrateCheckoutAddresses();
+          const pickupAddress = createPickupCheckoutAddress();
           const resolvedShippingAddress =
-            shippingAddress || hydratedAddresses.shippingAddress;
-          const resolvedBillingAddress = billingAddress || hydratedAddresses.billingAddress;
+            deliveryMode === "pickup"
+              ? pickupAddress
+              : shippingAddress || hydratedAddresses.shippingAddress;
+          const resolvedBillingAddress =
+            deliveryMode === "pickup"
+              ? pickupAddress
+              : billingAddress || hydratedAddresses.billingAddress;
 
           if (
-            !resolvedShippingAddress?.address ||
-            !resolvedShippingAddress?.name ||
-            !resolvedShippingAddress?.city ||
-            !resolvedShippingAddress?.postalCode
+            deliveryMode !== "pickup" &&
+            (!resolvedShippingAddress?.address ||
+              !resolvedShippingAddress?.name ||
+              !resolvedShippingAddress?.city ||
+              !resolvedShippingAddress?.postalCode)
           ) {
-            throw new Error("Vui lòng nhập địa chỉ nhận hàng trước khi thanh toán.");
-          }
+              throw new Error("Vui lòng nhập địa chỉ nhận hàng trước khi thanh toán.");
+            }
 
           const savedUserInfoRaw = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
           let savedUserInfo: Partial<UserInfo> | undefined;
@@ -640,20 +654,22 @@ export function useCheckout() {
               }
             : nextShippingAddress;
 
-          const currentCustomer = await getCurrentCustomer();
+          const currentCustomer =
+            deliveryMode === "pickup" ? null : await getCurrentCustomer();
           const customerEmail =
-            currentCustomer?.email?.trim() || savedUserInfo?.email?.trim() || "";
+            deliveryMode === "pickup"
+              ? pickupCheckoutEmail
+              : currentCustomer?.email?.trim() || savedUserInfo?.email?.trim() || "";
           if (!customerEmail) {
             throw new Error("Không tìm thấy email khách hàng để tiếp tục thanh toán.");
           }
 
-          await updateCartAddresses(activeCartId, {
+          let checkoutCart = await updateCartAddresses(activeCartId, {
             shippingAddress: nextShippingAddress,
             billingAddress: nextBillingAddress,
             email: customerEmail,
           });
 
-          let checkoutCart = await getCart(activeCartId);
           const hasShippingMethod = (checkoutCart.shipping_methods?.length || 0) > 0;
           if (!hasShippingMethod) {
             if (!selectedShippingOptionId) {
@@ -694,6 +710,7 @@ export function useCheckout() {
       billingAddress,
       cart.length,
       cartId,
+      deliveryMode,
       ensureServerCartFromGuestCart,
       requestInfo,
       selectedPaymentProviderId,
@@ -755,6 +772,10 @@ export function useCheckout() {
         if (checkoutData.isQRProvider) {
           setQRCheckout({
             qrCodeUrl: null,
+            transferAmount: null,
+            transferContent: null,
+            currencyCode: null,
+            cartId: checkoutData.activeCartId,
             status: "preparing",
             error: null,
           });
@@ -764,20 +785,32 @@ export function useCheckout() {
             checkoutData.paymentProviderId
           );
 
-          const qrCodeUrl = extractQRCodeUrl(paymentSessionResponse);
-          if (!qrCodeUrl) {
+          const qrPaymentDetails = extractQRPaymentDetails(
+            paymentSessionResponse,
+            checkoutData.paymentProviderId
+          );
+          if (!qrPaymentDetails.qrCodeUrl) {
             throw new Error("Không nhận được mã QR từ server");
           }
 
           setQRCheckout({
-            qrCodeUrl,
+            qrCodeUrl: qrPaymentDetails.qrCodeUrl,
+            transferAmount: qrPaymentDetails.transferAmount ?? checkoutData.checkoutCart.total ?? 0,
+            transferContent:
+              qrPaymentDetails.transferContent ||
+              `Thanh toan don ${checkoutData.activeCartId}`,
+            currencyCode:
+              qrPaymentDetails.currencyCode ||
+              checkoutData.checkoutCart.currency_code?.toUpperCase() ||
+              "VND",
+            cartId: checkoutData.activeCartId,
             status: "ready",
             error: null,
           });
 
           return {
             mode: "qr" as const,
-            qrCodeUrl,
+            qrCodeUrl: qrPaymentDetails.qrCodeUrl,
             cartId: checkoutData.activeCartId,
           };
         }
@@ -821,7 +854,7 @@ export function useCheckout() {
   );
 
   const completeStripePayment = useCallback(
-    async (cartIdOverride?: string | null) => {
+    async (cartIdOverride?: string | null, paymentIntentStatus?: string) => {
       try {
         const activeCartId = cartIdOverride || cartId;
         if (!activeCartId) {
@@ -845,6 +878,20 @@ export function useCheckout() {
           error instanceof Error && error.message
             ? error.message
             : "Thanh toán Stripe thất bại. Vui lòng thử lại";
+        const isRequiresCapture = paymentIntentStatus === "requires_capture";
+        const isWaitingForCapture =
+          isRequiresCapture && /cart_not_completed|chưa hoàn tất cart|not completed cart/i.test(message);
+
+        if (isWaitingForCapture) {
+          setStripeCheckout((current) => ({
+            ...current,
+            status: "waiting_confirmation",
+            error: null,
+          }));
+          toast("Stripe đã xác nhận thanh toán, đang chờ hệ thống hoàn tất đơn hàng.");
+          return;
+        }
+
         setCartError(message);
         setStripeCheckout((current) => ({
           ...current,
@@ -877,12 +924,25 @@ export function useCheckout() {
         await completeCart(activeCartId);
         console.log("[QR Payment] Cart completed successfully");
         resetCheckoutStateAfterSuccess();
+        return { confirmed: true as const };
       } catch (error) {
         console.warn("[QR Payment] Error completing payment:", error);
         const message =
           error instanceof Error && error.message
             ? error.message
             : "Thanh toán QR thất bại. Vui lòng thử lại";
+
+        const isWaitingForConfirmation =
+          /cart_not_completed|hoàn tất cart|not completed cart/i.test(message);
+        if (isWaitingForConfirmation) {
+          setQRCheckout((current) => ({
+            ...current,
+            status: "waiting_confirmation",
+            error: null,
+          }));
+          return { confirmed: false as const };
+        }
+
         setCartError(message);
         setQRCheckout((current) => ({
           ...current,
@@ -909,6 +969,10 @@ export function useCheckout() {
   const resetQRCheckout = useCallback(() => {
     setQRCheckout({
       qrCodeUrl: null,
+      transferAmount: null,
+      transferContent: null,
+      currencyCode: null,
+      cartId: null,
       status: "idle",
       error: null,
     });

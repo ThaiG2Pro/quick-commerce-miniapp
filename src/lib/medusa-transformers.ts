@@ -59,14 +59,17 @@ export function normalizeMockCategory(category: {
  * Transform Medusa Category to App Category
  */
 export function transformCategory(medusaCategory: MedusaCategory): Category {
+  const categoryImageUrl =
+    medusaCategory.product_category_image?.url ||
+    (medusaCategory.metadata?.image as string | undefined);
   return {
     id: hashId(medusaCategory.id),
     medusaId: medusaCategory.id,
     handle: medusaCategory.handle,
     name: medusaCategory.name,
-    // Try to get image from metadata, otherwise use a placeholder
-    image: (medusaCategory.metadata?.image as string) || 
-           `https://via.placeholder.com/150?text=${encodeURIComponent(medusaCategory.name)}`,
+    image:
+      categoryImageUrl ||
+      `https://via.placeholder.com/150?text=${encodeURIComponent(medusaCategory.name)}`,
   };
 }
 

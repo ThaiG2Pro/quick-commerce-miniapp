@@ -20,9 +20,11 @@ import {
   selectShippingOptionState,
   shippingOptionsState,
   shippingAddressState,
+  createPickupCheckoutAddress,
+  pickupCheckoutEmail,
 } from "@/state";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { Suspense, useEffect, useMemo } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { formatPrice } from "@/utils/format";
 import toast from "react-hot-toast";
 import DeliverySummary from "./delivery-summary";
@@ -74,10 +76,6 @@ function Delivery() {
   const [selectedDeliveryMode, setSelectedDeliveryMode] =
     useAtom(deliveryModeState);
   const hydrateCheckoutAddresses = useHydrateCheckoutAddresses();
-
-  useEffect(() => {
-    setSelectedDeliveryMode("pickup");
-  }, [setSelectedDeliveryMode]);
 
   useEffect(() => {
     void hydrateCheckoutAddresses();
@@ -157,7 +155,17 @@ function AutoApplyDeliveryShippingOption() {
 
     void (async () => {
       try {
-        await applyShippingOption(targetOption.id);
+        const pickupAddress = createPickupCheckoutAddress();
+        await applyShippingOption(
+          targetOption.id,
+          selectedDeliveryMode === "pickup"
+            ? {
+                shippingAddress: pickupAddress,
+                billingAddress: pickupAddress,
+                email: pickupCheckoutEmail,
+              }
+            : undefined
+        );
         setSelectedShippingOptionId(targetOption.id);
       } catch (error) {
         console.error("Failed to auto apply shipping option:", error);
@@ -166,6 +174,7 @@ function AutoApplyDeliveryShippingOption() {
   }, [
     applyShippingOption,
     cartMutating,
+    selectedDeliveryMode,
     selectedShippingOptionId,
     setSelectedShippingOptionId,
     targetOption,
@@ -181,6 +190,7 @@ function ShippingOptions() {
   );
   const applyShippingOption = useSetAtom(selectShippingOptionState);
   const cartMutating = useAtomValue(cartMutatingState);
+  const [pendingOptionId, setPendingOptionId] = useState<string | null>(null);
   const shippingOnlyOptions = useMemo(() => {
     const pickupOption = pickPreferredPickupOption(shippingOptions);
     if (!pickupOption) {
@@ -226,11 +236,15 @@ function ShippingOptions() {
                   return;
                 }
                 try {
-                  await applyShippingOption(option.id);
                   setSelectedShippingOptionId(option.id);
+                  setPendingOptionId(option.id);
+                  await applyShippingOption(option.id);
                 } catch (error) {
                   console.error("Failed to apply shipping option:", error);
                   toast.error("Không thể áp dụng phương thức vận chuyển.");
+                  setSelectedShippingOptionId(effectiveSelectedId);
+                } finally {
+                  setPendingOptionId(null);
                 }
               }}
             >
@@ -240,6 +254,9 @@ function ShippingOptions() {
                   {formatPrice(option.amount, option.currencyCode)}
                 </span>
               </div>
+              {pendingOptionId === option.id && (
+                <div className="mt-0.5 text-xs text-subtitle">Đang cập nhật phí vận chuyển...</div>
+              )}
               {option.description && (
                 <div className="mt-0.5 text-xs text-subtitle">{option.description}</div>
               )}

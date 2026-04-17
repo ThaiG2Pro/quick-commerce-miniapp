@@ -2,7 +2,7 @@ import { useAtomValue } from "jotai";
 import { cartState } from "@/state";
 import CartItem from "./cart-item";
 import Section from "@/components/section";
-import { Icon, Input } from "zmp-ui";
+import { Icon } from "zmp-ui";
 import HorizontalDivider from "@/components/horizontal-divider";
 
 export default function CartList() {
@@ -15,7 +15,7 @@ export default function CartList() {
           <Icon icon="zi-calendar" />
           <div>
             <span className="font-normal text-sm">Thời gian nhận:</span>{" "}
-            <span className="font-medium text-sm">Từ 16h, 20/1/2025</span>
+            <span className="font-medium text-sm">Sẽ đến ngay.</span>
           </div>
         </div>
       }

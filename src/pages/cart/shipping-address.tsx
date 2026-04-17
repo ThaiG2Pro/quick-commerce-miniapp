@@ -14,7 +14,7 @@ import {
   updateCartAddresses,
   upsertCurrentCustomerAddress,
 } from "@/lib/medusa-sdk";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useHydrateCheckoutAddresses } from "@/hooks";
 import { useRequestInformation } from "@/hooks";
 
@@ -28,6 +28,7 @@ function ShippingAddressPage() {
   const navigate = useNavigate();
   const hydrateCheckoutAddresses = useHydrateCheckoutAddresses();
   const requestInfo = useRequestInformation();
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     void hydrateCheckoutAddresses();
@@ -46,6 +47,7 @@ function ShippingAddressPage() {
         });
 
         try {
+          setSaving(true);
           await requestInfo();
           const customer = await getCurrentCustomer();
           const normalizedAddress = {
@@ -80,6 +82,8 @@ function ShippingAddressPage() {
         } catch (error) {
           console.error("Failed to update checkout address:", error);
           toast.error("Không thể lưu địa chỉ lên giỏ hàng.");
+        } finally {
+          setSaving(false);
         }
       }}
     >
@@ -166,18 +170,22 @@ function ShippingAddressPage() {
           type="danger"
           prefixIcon={<Icon icon="zi-delete" />}
           onClick={() => {
+            if (saving) {
+              return;
+            }
             resetAddress();
             resetBillingAddress();
             toast.success("Đã xóa địa chỉ");
             navigate(-1);
           }}
+          disabled={saving}
         >
           Xóa địa chỉ này
         </Button>
       </div>
       <div className="p-6 pt-4 bg-section">
-        <Button htmlType="submit" fullWidth>
-          Xong
+        <Button htmlType="submit" fullWidth disabled={saving}>
+          {saving ? "Đang lưu..." : "Xong"}
         </Button>
       </div>
     </form>
