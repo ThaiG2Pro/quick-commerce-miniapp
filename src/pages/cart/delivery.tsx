@@ -23,6 +23,7 @@ import {
   createPickupCheckoutAddress,
   pickupCheckoutEmail,
 } from "@/state";
+import { getStoredGuestEmail } from "@/lib/medusa-sdk";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { formatPrice } from "@/utils/format";
@@ -156,13 +157,16 @@ function AutoApplyDeliveryShippingOption() {
     void (async () => {
       try {
         const pickupAddress = createPickupCheckoutAddress();
+        // Prefer guest auto-generated email if present; fall back to legacy pickup email
+        const guestEmail = (typeof window !== "undefined" && getStoredGuestEmail && getStoredGuestEmail()) || pickupCheckoutEmail;
+
         await applyShippingOption(
           targetOption.id,
           selectedDeliveryMode === "pickup"
             ? {
                 shippingAddress: pickupAddress,
                 billingAddress: pickupAddress,
-                email: pickupCheckoutEmail,
+                email: guestEmail,
               }
             : undefined
         );
@@ -192,6 +196,14 @@ function ShippingOptions() {
   const cartMutating = useAtomValue(cartMutatingState);
   const [pendingOptionId, setPendingOptionId] = useState<string | null>(null);
   const shippingOnlyOptions = useMemo(() => {
+    const typedShippingOptions = shippingOptions.filter(
+      (option) => option.fulfillment_set_type === "shipping"
+    );
+    if (typedShippingOptions.length) {
+      return typedShippingOptions;
+    }
+
+    // Backward-compatible fallback when options have no fulfillment_set_type.
     const pickupOption = pickPreferredPickupOption(shippingOptions);
     if (!pickupOption) {
       return shippingOptions;

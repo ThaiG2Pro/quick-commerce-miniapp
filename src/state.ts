@@ -56,6 +56,9 @@ import {
   removePromotionCodes,
   updateLineItem,
   updateCartAddresses,
+  updateCartContact,
+  ensureGuestAuthOnBootstrap,
+  getStoredGuestEmail,
 } from "@/lib/medusa-sdk";
 import {
   normalizeMockCategory,
@@ -160,6 +163,20 @@ export function createPickupCheckoutAddress(): ShippingAddress {
   };
 }
 
+export function createDefaultShippingAddress(): ShippingAddress {
+  return {
+    alias: "Địa chỉ mặc định",
+    address: "Uit",
+    address2: undefined,
+    city: "Hồ Chí Minh",
+    province: undefined,
+    postalCode: "73000",
+    countryCode: "vn",
+    name: "Thái hàng",
+    phone: "0566464459",
+  };
+}
+
 export const pickupCheckoutEmail = "zalo_8563448330806889665@miniapp.local";
 
 export const loyaltyProfileState = atom(async (get) => {
@@ -192,7 +209,7 @@ export const categoriesState = atom(async () => {
   try {
     const medusaCategories = await getCategories({
       limit: 100,
-      fields: "*product_category_image",
+      fields: "*product_category_image,+metadata",
     });
     return medusaCategories.map(transformCategory);
   } catch (error) {
@@ -259,6 +276,14 @@ export const cartIdState = atomWithStorage<string | null>(
   null
 );
 export const regionsCacheState = atom<MedusaRegionLite[]>([]);
+export const regionsState = atom(async (get) => {
+  const cached = get(regionsCacheState);
+  if (cached && cached.length) {
+    return cached as MedusaRegionLite[];
+  }
+  const regions = (await getRegions()) as MedusaRegionLite[];
+  return regions ?? [];
+});
 export const shippingOptionsCacheState = atom<ShippingOption[]>([]);
 export const shippingOptionsCacheCartIdState = atom<string | null>(null);
 export const storefrontBootstrapStatusState = atom<"idle" | "running" | "done">("idle");
@@ -361,12 +386,17 @@ export const initializeCartState = atom(null, async (get, set) => {
     set(cartErrorState, null);
     return;
   }
-
   set(cartInitializingState, true);
   set(cartErrorState, null);
 
   try {
+    if (typeof window !== "undefined") {
+      console.debug("state: initializeCartState - fetching cart for cartId", { cartId });
+    }
     const medusaCart = await getCart(cartId);
+    if (typeof window !== "undefined") {
+      console.debug("state: initializeCartState - fetched cart", { cartId, items: medusaCart.items?.length });
+    }
     set(cartState, transformMedusaCart(medusaCart));
     set(cartPricingState, transformMedusaCartPricing(medusaCart));
     set(
@@ -451,7 +481,12 @@ export const addOrUpdateCartItemState = atom(
       const hasStoredMedusaAuthToken = Boolean(
         localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)
       );
-      if (!hasStoredMedusaAuthToken) {
+      const existingCartId = get(cartIdState);
+
+      // If user is unauthenticated AND we don't already have a server cart id,
+      // operate in local-only mode. If a guest cartId exists (created during
+      // bootstrap), continue with server-sync flow below.
+      if (!hasStoredMedusaAuthToken && !existingCartId) {
         if (newQuantity <= 0) {
           set(
             cartState,
@@ -503,21 +538,26 @@ export const addOrUpdateCartItemState = atom(
             "No available Medusa region. Please configure at least one store region."
           );
         }
+        if (typeof window !== "undefined") {
+          console.debug("state: addOrUpdateCartItemState - creating cart because none existed", { defaultRegionId });
+        }
         const createdCart = await createCart(defaultRegionId);
         currentCartId = createdCart.id;
         set(cartIdState, currentCartId);
       }
 
+      const ensuredCartId = currentCartId as string;
+
       let updatedCart;
       if (newQuantity <= 0) {
         if (existingItem?.lineItemId) {
-          updatedCart = await removeLineItem(currentCartId, existingItem.lineItemId);
+          updatedCart = await removeLineItem(ensuredCartId, existingItem.lineItemId);
         } else {
-          updatedCart = await getCart(currentCartId);
+          updatedCart = await getCart(ensuredCartId);
         }
       } else if (existingItem?.lineItemId) {
         updatedCart = await updateLineItem(
-          currentCartId,
+          ensuredCartId,
           existingItem.lineItemId,
           newQuantity
         );
@@ -531,14 +571,14 @@ export const addOrUpdateCartItemState = atom(
           );
         }
         updatedCart = await addLineItem(
-          currentCartId,
+          ensuredCartId,
           payload.product.variantId,
           newQuantity
         );
       }
 
       if (!updatedCart) {
-        updatedCart = await getCart(currentCartId);
+        updatedCart = await getCart(ensuredCartId);
       }
 
       set(cartState, transformMedusaCart(updatedCart));
@@ -547,7 +587,7 @@ export const addOrUpdateCartItemState = atom(
         selectedShippingOptionIdState,
         updatedCart.shipping_methods?.[0]?.shipping_option?.id ?? null
       );
-      set(shippingOptionsCacheCartIdState, currentCartId);
+      set(shippingOptionsCacheCartIdState, ensuredCartId);
     } catch (error) {
       console.error("Failed cart mutation:", error);
       set(
@@ -585,74 +625,59 @@ export const cartTotalState = atom((get) => {
   };
 });
 
-function normalizeShippingOptionName(name?: string) {
-  return (name || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim();
-}
 
-function isPickupShippingOption(option: ShippingOption) {
-  const normalizedName = normalizeShippingOptionName(option.name);
-  const normalizedDescription = normalizeShippingOptionName(option.description);
-  return (
-    normalizedName.includes("tu den lay") ||
-    normalizedName.includes("pickup") ||
-    normalizedName.includes("tai cua hang") ||
-    normalizedName.includes("nhan tai") ||
-    normalizedDescription.includes("pickup") ||
-    normalizedDescription.includes("tai cua hang") ||
-    normalizedDescription.includes("nhan tai")
-  );
-}
 
 export function pickPreferredShippingOption(options: ShippingOption[]) {
   if (!options.length) {
     return null;
   }
-
-  const pickupOption = pickPreferredPickupOption(options);
-  const shippingCandidates = pickupOption
-    ? options.filter((option) => option.id !== pickupOption.id)
-    : options;
-  const nonPickupByLabel = shippingCandidates.filter(
-    (option) => !isPickupShippingOption(option)
+  // Filter to shipping-type options only, sort by price (cheapest first)
+  const shippingOptions = options.filter(
+    (opt) => opt.fulfillment_set_type === "shipping"
   );
-  const finalizedShippingCandidates = nonPickupByLabel.length
-    ? nonPickupByLabel
-    : shippingCandidates;
-
-  const savingOption = finalizedShippingCandidates.find((option) =>
-    normalizeShippingOptionName(option.name).includes("giao tiet kiem")
-  );
-  if (savingOption) {
-    return savingOption;
+  if (!shippingOptions.length) {
+    // Fallback to all options if no explicit type set
+    return [...options].sort((a, b) => a.amount - b.amount)[0];
   }
-
-  return [...finalizedShippingCandidates].sort((a, b) => a.amount - b.amount)[0];
+  return [...shippingOptions].sort((a, b) => a.amount - b.amount)[0];
 }
 
 export function pickPreferredPickupOption(options: ShippingOption[]) {
   if (!options.length) {
     return null;
   }
+  // Find first pickup option by fulfillment_set_type
+  const pickupOption = options.find(
+    (option) => option.fulfillment_set_type === "pickup"
+  );
+  return pickupOption ?? null;
+}
 
-  const pickupOption = options.find(isPickupShippingOption);
-  if (pickupOption) {
-    return pickupOption;
+function resolveFulfillmentSetType(option: {
+  fulfillment_set_type?: string;
+  service_zone?: { fulfillment_set?: { type?: string } };
+  data?: { fulfillment_set_type?: string; type?: string };
+}) {
+  const rawType =
+    option.fulfillment_set_type ||
+    option.service_zone?.fulfillment_set?.type ||
+    option.data?.fulfillment_set_type ||
+    option.data?.type;
+
+  if (rawType === "shipping" || rawType === "pickup") {
+    return rawType;
   }
 
-  const zeroAmountOption = [...options].sort((a, b) => a.amount - b.amount)[0];
-  return zeroAmountOption ?? null;
+  return undefined;
 }
 
 async function resolveShippingOptionsForCart(cartId: string, currencyCode?: string) {
   const options = await listCartShippingOptions(cartId);
-  const calculatedPrices = await Promise.all(
+  const calculatedPrices: Array<readonly [string, number | undefined | null]> =
+    await Promise.all(
     options.map(async (option) => {
       const optionPriceType = (option as { price_type?: string }).price_type;
-      const optionAmount =
+      const optionAmount: number | undefined | null =
         (option as { amount?: number }).amount ??
         (option as { price_incl_tax?: number }).price_incl_tax ??
         (option as { price?: number }).price;
@@ -667,22 +692,32 @@ async function resolveShippingOptionsForCart(cartId: string, currencyCode?: stri
         return [option.id, undefined] as const;
       }
     })
-  );
+    );
 
-  const amountMap = new Map(calculatedPrices);
+  const amountMap = new Map<string, number | undefined | null>(calculatedPrices);
 
   return options
     .map((option) => {
       const amount = amountMap.get(option.id);
-      if (amount === undefined) {
+      if (amount == null) {
         return null;
       }
+      // Resolve fulfillment type from known Medusa response shapes.
+      const fulfillment_set_type = resolveFulfillmentSetType(
+        option as {
+          fulfillment_set_type?: string;
+          service_zone?: { fulfillment_set?: { type?: string } };
+          data?: { fulfillment_set_type?: string; type?: string };
+        }
+      );
+      
       return {
         id: option.id,
         name: option.name,
         description: option.data?.description as string | undefined,
         amount,
         currencyCode,
+        fulfillment_set_type,
       } satisfies ShippingOption;
     })
     .filter((option): option is ShippingOption => option !== null);
@@ -714,6 +749,10 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
 
   set(storefrontBootstrapStatusState, "running");
   try {
+    // Ensure guest authentication on bootstrap
+    // If no token exists, silently register and login a guest account
+    await ensureGuestAuthOnBootstrap();
+
     let regions = get(regionsCacheState);
     if (!regions.length) {
       regions = (await getRegions()) as MedusaRegionLite[];
@@ -726,13 +765,17 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
         set(shippingAddressState, customerAddress);
         set(billingAddressState, customerAddress);
       } else {
-        set(shippingAddressState, undefined);
-        set(billingAddressState, undefined);
+        // Fallback to default address for guest users
+        const defaultAddress = createDefaultShippingAddress();
+        set(shippingAddressState, defaultAddress);
+        set(billingAddressState, defaultAddress);
       }
     } catch (error) {
       console.warn("Failed to prefetch customer address during bootstrap:", error);
-      set(shippingAddressState, undefined);
-      set(billingAddressState, undefined);
+      // Still use default address as fallback on error
+      const defaultAddress = createDefaultShippingAddress();
+      set(shippingAddressState, defaultAddress);
+      set(billingAddressState, defaultAddress);
     }
 
     try {
@@ -741,23 +784,36 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
       console.warn("Failed to prefetch stations during bootstrap:", error);
     }
 
-    try {
-      await get(paymentProvidersState);
-    } catch (error) {
-      console.warn("Failed to prefetch payment providers during bootstrap:", error);
-    }
+    
 
     let cartId = get(cartIdState);
-    const hasStoredMedusaAuthToken =
-      typeof window !== "undefined" &&
-      Boolean(localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN));
 
-    if (!cartId && hasStoredMedusaAuthToken) {
+    // Always create a guest cart during bootstrap when no cartId exists.
+    // Previously this only created a cart for authenticated users (token present).
+    if (!cartId) {
       const defaultRegionId = regions[0]?.id;
       if (defaultRegionId) {
-        const createdCart = await createCart(defaultRegionId);
-        cartId = createdCart.id;
-        set(cartIdState, cartId);
+        try {
+          const createdCart = await createCart(defaultRegionId);
+          cartId = createdCart.id;
+          set(cartIdState, cartId);
+
+          // If guest email was generated during bootstrap, attach it to the cart
+          try {
+            const storedGuestEmail = typeof window !== "undefined" ? getStoredGuestEmail() : null;
+            if (storedGuestEmail) {
+              try {
+                await updateCartContact(cartId, { email: storedGuestEmail });
+              } catch (e) {
+                console.warn("Failed to attach guest email to cart during bootstrap:", e);
+              }
+            }
+          } catch (e) {
+            // ignore storage access errors
+          }
+        } catch (error) {
+          console.warn("Failed to create cart during bootstrap:", error);
+        }
       }
     }
 
@@ -770,6 +826,7 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
           selectedShippingOptionIdState,
           medusaCart.shipping_methods?.[0]?.shipping_option?.id ?? null
         );
+        // get shipping option from cart exis previous 
         try {
           await set(prefetchShippingOptionsState, cartId);
         } catch (prefetchError) {
@@ -788,6 +845,11 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
           throw error;
         }
       }
+    }
+    try {
+      await get(paymentProvidersState);
+    } catch (error) {
+      console.warn("Failed to prefetch payment providers during bootstrap:", error);
     }
 
     set(storefrontBootstrapStatusState, "done");
@@ -814,12 +876,13 @@ export const shippingOptionsState = atom(async (get) => {
 });
 
 export const paymentProvidersState = atom(async (get) => {
-  const regionId = get(regionsCacheState)[0]?.id;
-  if (!regionId) {
+  const cartId = get(cartIdState);
+  const regions = await get(regionsState);
+  const regionId = regions?.[0]?.id;
+  if (!regionId && !cartId) {
     return [] as PaymentProviderOption[];
   }
-
-  const providers = await listCartPaymentProviders(undefined, regionId);
+  const providers = await listCartPaymentProviders(cartId ?? undefined, regionId ?? undefined);
   return providers.map((provider) => ({
     id: provider.id,
     name:

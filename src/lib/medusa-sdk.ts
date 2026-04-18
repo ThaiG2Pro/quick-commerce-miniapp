@@ -1324,12 +1324,34 @@ export async function performGuestAutoAuth(): Promise<{
     
     console.log("[Guest Auth] Step 2 SUCCESS: JWT token received from login, length:", authToken.length);
 
-    // Step 3: Save token to localStorage for session persistence
-    console.log("[Guest Auth] Step 3: Saving credentials to localStorage...");
+    // Step 3: Save token to localStorage for session persistence and set SDK token
+    console.log("[Guest Auth] Step 3: Saving credentials to localStorage and applying token to SDK...");
     if (typeof window !== "undefined") {
-      localStorage.setItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN, authToken);
-      localStorage.setItem("guestEmail", guestEmail);
-      console.log("[Guest Auth] Step 3 SUCCESS: Credentials saved to localStorage");
+      try {
+        // Ensure SDK will send Authorization header for subsequent requests
+        await sdk.client.setToken(authToken);
+      } catch (setTokenErr) {
+        console.warn("[Guest Auth] Warning: failed to set token on SDK client:", setTokenErr);
+      }
+
+      try {
+        localStorage.setItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN, authToken);
+      } catch (e) {
+        console.warn("[Guest Auth] Warning: failed to persist token to localStorage:", e);
+      }
+
+      try {
+        localStorage.setItem(CONFIG.STORAGE_KEYS.GUEST_EMAIL || "guestEmail", guestEmail);
+      } catch (e) {
+        // fallback to literal key if config missing
+        try {
+          localStorage.setItem("guestEmail", guestEmail);
+        } catch (e2) {
+          console.warn("[Guest Auth] Warning: failed to persist guest email:", e2);
+        }
+      }
+
+      console.log("[Guest Auth] Step 3 SUCCESS: Credentials saved and SDK token applied");
     }
 
     // Step 4: Verify authentication is working
