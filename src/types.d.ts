@@ -82,6 +82,7 @@ export interface ShippingOption {
   amount: number;
   currencyCode?: string;
   description?: string;
+  fulfillment_set_type?: 'shipping' | 'pickup';
 }
 
 export interface PaymentProviderOption {

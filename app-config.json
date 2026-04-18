@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "ZaUI F&B",
+    "title": "Vil Market DEMO",
     "textColor": "white",
     "headerColor": "#ffffff",
     "statusBar": "transparent",
@@ -16,7 +16,7 @@
     "name": "zaui-market",
     "apiUrl": "",
     "oaIDtoOpenChat": "4318657068771012646",
-    "logoUrl": "https://res.cloudinary.com/doj3fpuqb/image/upload/sua-tuoi-cghl-it-duong-loc4.webp",
+    "logoUrl": "https://res.cloudinary.com/dxbxh4f4m/image/upload/v1776392410/Untitled_design_2_1_pzf7ah.png",
     "shopName": "Vil Market",
     "shopAddress": "Kí túc xá khu B Đại Học quốc gia"
   }

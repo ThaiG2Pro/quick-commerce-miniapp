@@ -16,7 +16,6 @@ import {
 } from "@/lib/medusa-sdk";
 import { useEffect, useState } from "react";
 import { useHydrateCheckoutAddresses } from "@/hooks";
-import { useRequestInformation } from "@/hooks";
 
 function ShippingAddressPage() {
   const [address, setAddress] = useAtom(shippingAddressState);
@@ -27,7 +26,6 @@ function ShippingAddressPage() {
   const resetBillingAddress = useResetAtom(billingAddressState);
   const navigate = useNavigate();
   const hydrateCheckoutAddresses = useHydrateCheckoutAddresses();
-  const requestInfo = useRequestInformation();
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -48,7 +46,6 @@ function ShippingAddressPage() {
 
         try {
           setSaving(true);
-          await requestInfo();
           const customer = await getCurrentCustomer();
           const normalizedAddress = {
             alias: newAddress.alias || "",

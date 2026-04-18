@@ -61,6 +61,7 @@ export function normalizeMockCategory(category: {
 export function transformCategory(medusaCategory: MedusaCategory): Category {
   const categoryImageUrl =
     medusaCategory.product_category_image?.url ||
+    (medusaCategory.metadata?.category_image as string | undefined) ||
     (medusaCategory.metadata?.image as string | undefined);
   return {
     id: hashId(medusaCategory.id),

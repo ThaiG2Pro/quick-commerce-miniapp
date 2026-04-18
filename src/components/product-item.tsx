@@ -71,6 +71,24 @@ export default function ProductItem(props: ProductItemProps) {
                     )}`
                   : formatPrice(props.product.price, props.product.currencyCode)}
               </div>
+                {/* Inventory display: show exact quantity for single-variant products,
+                    otherwise show a concise in-stock / out-of-stock label */}
+                {props.product.variants && props.product.variants.length === 1 ? (
+                  (() => {
+                    const v = props.product.variants[0];
+                    const qty = v.inventoryQuantity ?? 0;
+                    const inStock = v.manageInventory === false || qty > 0;
+                    return (
+                      <div className={`text-3xs mt-0.5 ${inStock ? "text-green-600" : "text-red-600"}`}>
+                        Tồn kho: {qty}
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <div className={`text-3xs mt-0.5 ${props.product.isPurchasable ? "text-green-600" : "text-red-600"}`}>
+                    {props.product.isPurchasable ? "Còn hàng" : "Hết hàng"}
+                  </div>
+                )}
               {props.product.hasCampaignPrice && (
                 <div className="text-3xs text-primary mt-0.5">
                   Giá theo chương trình khuyến mãi

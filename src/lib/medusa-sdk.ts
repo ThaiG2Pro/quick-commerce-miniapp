@@ -28,8 +28,41 @@ export const sdk = new Medusa({
   },
 });
 
+// Ensure publishable key header is always sent with store requests.
+// Some Medusa deployments require `x-publishable-api-key` on store endpoints.
+// Wrap sdk.client.fetch to inject the header if the SDK didn't do it.
+try {
+  const PUBLISHABLE = MEDUSA_PUBLISHABLE_KEY;
+  if (PUBLISHABLE) {
+    // If SDK exposes a setHeader method, prefer it.
+    if ((sdk.client as any)?.setHeader && typeof (sdk.client as any).setHeader === "function") {
+      try {
+        (sdk.client as any).setHeader("x-publishable-api-key", PUBLISHABLE);
+      } catch (e) {
+        console.warn("Could not set publishable key via sdk.client.setHeader:", e);
+      }
+    }
+
+    // Wrap fetch to ensure header is present on every request as a fallback.
+    if ((sdk.client as any)?.fetch && typeof (sdk.client as any).fetch === "function") {
+      const originalFetch = (sdk.client as any).fetch.bind((sdk.client as any));
+      (sdk.client as any).fetch = async (path: string, options?: any) => {
+        options = options || {};
+        options.headers = {
+          ...(options.headers || {}),
+          "x-publishable-api-key": PUBLISHABLE,
+        };
+        return originalFetch(path, options);
+      };
+    }
+  }
+} catch (e) {
+  console.warn("Failed to attach publishable key header to Medusa SDK client:", e);
+}
+
 let cachedDefaultRegionId: string | null | undefined;
-const CALCULATED_PRICE_FIELD = "*variants.calculated_price";
+// Ensure we request calculated prices and inventory-related fields for variants
+const CALCULATED_PRICE_FIELD = "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder";
 const ORDER_QUERY_FIELDS = [
   "*shipping_address",
   "*fulfillments",
@@ -697,15 +730,38 @@ export async function removePromotionCodes(cartId: string, promoCodes: string[])
  */
 export async function completeCart(cartId: string) {
   try {
+    // Refetch cart before completion to ensure latest state
+    const currentCart = await getCart(cartId);
+    
+    // Validate cart state before attempting completion
+    if (!currentCart.email) {
+      throw new Error("Cart email not set. Cannot complete checkout.");
+    }
+    if (!currentCart.shipping_address) {
+      throw new Error("Cart shipping address not set. Cannot complete checkout.");
+    }
+    if (!currentCart.shipping_methods || currentCart.shipping_methods.length === 0) {
+      throw new Error("Cart shipping method not selected. Cannot complete checkout.");
+    }
+    
+    console.log("[completeCart] Cart validation passed. Attempting completion...", {
+      cartId,
+      email: currentCart.email,
+      shippingMethods: currentCart.shipping_methods?.map(m => ({ id: m.id, name: m.name })),
+    });
+
     const response = await sdk.store.cart.complete(cartId);
 
     if (response.type === "cart") {
-      const errorCode =
-        typeof response.error === "string"
-          ? response.error
-          : "cart_not_completed";
+      const errorMessage =
+        typeof response.error === "object" && response.error
+          ? JSON.stringify(response.error)
+          : typeof response.error === "string"
+            ? response.error
+            : "cart_not_completed";
+      console.error("[completeCart] Cart completion failed:", errorMessage);
       throw new Error(
-        `Medusa checkout chưa hoàn tất cart. error=${errorCode}`
+        `Medusa checkout chưa hoàn tất cart. error=${errorMessage}`
       );
     }
 
@@ -1213,6 +1269,15 @@ export async function authenticateWithZaloAccessToken(accessToken: string) {
     }
 
     await sdk.client.setToken(authToken);
+    // Debug: log token presence for troubleshooting auth issues
+    try {
+      console.debug("[Auth Debug] setToken called with token (length):", typeof authToken === 'string' ? authToken.length : authToken);
+      // Try to introspect SDK client token if available
+      const sdkToken = (sdk.client as any).getToken ? (sdk.client as any).getToken() : (sdk.client as any).token;
+      console.debug("[Auth Debug] sdk.client token available:", sdkToken ? (typeof sdkToken === 'string' ? sdkToken.slice(0, 8) + '...' : sdkToken) : sdkToken);
+    } catch (e) {
+      console.debug("[Auth Debug] could not introspect sdk.client token:", e);
+    }
     if (typeof window !== "undefined") {
       localStorage.setItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN, authToken);
     }
@@ -1238,6 +1303,48 @@ export async function hydrateMedusaAuthFromStorage() {
   }
 
   await sdk.client.setToken(token);
+  try {
+    console.debug("[Auth Debug] hydrateMedusaAuthFromStorage applied token (length):", typeof token === 'string' ? token.length : token);
+    const sdkToken = (sdk.client as any).getToken ? (sdk.client as any).getToken() : (sdk.client as any).token;
+    console.debug("[Auth Debug] sdk.client token after hydrate:", sdkToken ? (typeof sdkToken === 'string' ? sdkToken.slice(0,8)+"..." : sdkToken) : sdkToken);
+
+    // Decode JWT payload (best-effort) to inspect actor_id and other claims
+    try {
+      const parts = token.split('.');
+      if (parts.length >= 2) {
+        const payloadB64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = payloadB64 + '='.repeat((4 - (payloadB64.length % 4)) % 4);
+        const json = atob(padded);
+        const payload = JSON.parse(json);
+        console.debug('[Auth Debug] Decoded token payload:', payload);
+
+        // If actor_id is missing or empty, this token is likely a registration token
+        // or otherwise not suitable for calling protected store endpoints.
+        if (!payload || !payload.actor_id) {
+          console.warn('[Auth Debug] Token missing actor_id — clearing token to avoid 401s');
+          // Clear stored token and SDK token to prevent further protected calls
+          try {
+            localStorage.removeItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN);
+          } catch (e) {
+            console.warn('[Auth Debug] Could not remove token from storage:', e);
+          }
+          try {
+            sdk.client.clearToken?.();
+          } catch (e) {
+            // some SDK builds may not expose clearToken
+            try {
+              (sdk.client as any).setToken?.(null);
+            } catch (e2) {}
+          }
+          return false;
+        }
+      }
+    } catch (decodeErr) {
+      console.debug('[Auth Debug] Failed to decode token payload:', decodeErr);
+    }
+  } catch (e) {
+    console.debug("[Auth Debug] could not introspect sdk.client token after hydrate:", e);
+  }
   return true;
 }
 
@@ -1300,6 +1407,55 @@ export async function performGuestAutoAuth(): Promise<{
     try {
       const registerResponse = await registerCustomer(guestEmail, GUEST_FIXED_PASSWORD);
       console.log("[Guest Auth] Step 1 SUCCESS: Customer registered");
+
+      // If registration returned a registration token, use it to create the
+      // actual customer resource in the store (required by Medusa's auth flow).
+      // Some Medusa setups return a registration token from the register route
+      // which must be exchanged by calling POST /store/customers with that
+      // token in the Authorization header to create the customer and link
+      // the auth identity (actor_id). If we don't do this the later login
+      // may yield a token that lacks `actor_id` and protected store routes
+      // (e.g. /store/customers/me) will return 401.
+      try {
+        let registrationToken: string | undefined;
+        if (registerResponse) {
+          if (typeof registerResponse === "string") {
+            registrationToken = registerResponse;
+          } else if ((registerResponse as any).token) {
+            registrationToken = (registerResponse as any).token;
+          } else if ((registerResponse as any).data && (registerResponse as any).data.token) {
+            registrationToken = (registerResponse as any).data.token;
+          }
+        }
+
+        if (registrationToken) {
+          try {
+            const createCustomerUrl = `${MEDUSA_BACKEND_URL.replace(/\/$/, "")}/store/customers`;
+            const resp = await (typeof window !== 'undefined'
+              ? window.fetch(createCustomerUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${registrationToken}`,
+                    'x-publishable-api-key': MEDUSA_PUBLISHABLE_KEY || '',
+                  },
+                  body: JSON.stringify({ email: guestEmail }),
+                })
+              : Promise.reject(new Error('no window')));
+
+            if (!resp.ok) {
+              const txt = await resp.text().catch(() => "");
+              console.warn('[Guest Auth] create customer with registration token returned', resp.status, txt);
+            } else {
+              console.log('[Guest Auth] create customer succeeded for', guestEmail);
+            }
+          } catch (createErr) {
+            console.warn('[Guest Auth] Failed to create customer after register:', createErr);
+          }
+        }
+      } catch (e) {
+        console.warn('[Guest Auth] Registration token handling failed:', e);
+      }
     } catch (registerError: unknown) {
       // If email already exists (very unlikely but possible in edge cases),
       // we'll proceed to login. In normal cases, registration should succeed.
@@ -1316,13 +1472,31 @@ export async function performGuestAutoAuth(): Promise<{
     // Medusa SDK's auth.login() returns the token as a string and also sets it internally
     console.log("[Guest Auth] Step 2: Attempting to login guest customer...");
     const authToken = await loginCustomer(guestEmail, GUEST_FIXED_PASSWORD);
-    
+
     if (!authToken || typeof authToken !== 'string') {
       console.error("[Guest Auth] Step 2 FAILED: No valid JWT token returned from login. Got:", authToken);
       throw new Error("Guest login did not return a valid JWT token");
     }
-    
+
     console.log("[Guest Auth] Step 2 SUCCESS: JWT token received from login, length:", authToken.length);
+
+    // Decode and log token payload to surface actor_id (helps diagnose 401s)
+    try {
+      const parts = authToken.split('.');
+      if (parts.length >= 2) {
+        const payloadB64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = payloadB64 + '='.repeat((4 - (payloadB64.length % 4)) % 4);
+        const json = atob(padded);
+        const payload = JSON.parse(json);
+        console.debug('[Guest Auth] Decoded login token payload:', payload);
+        console.debug('[Guest Auth] login token actor_id:', payload?.actor_id);
+        if (!payload?.actor_id) {
+          console.warn('[Guest Auth] Login token missing actor_id — this token will not access protected store endpoints.');
+        }
+      }
+    } catch (e) {
+      console.debug('[Guest Auth] Failed to decode login token payload:', e);
+    }
 
     // Step 3: Save token to localStorage for session persistence and set SDK token
     console.log("[Guest Auth] Step 3: Saving credentials to localStorage and applying token to SDK...");
@@ -1385,6 +1559,54 @@ export async function performGuestAutoAuth(): Promise<{
     } catch (verifyError) {
       console.warn("[Guest Auth] Step 4 WARNING: Could not verify customer:", verifyError);
       // Don't fail - token might still be valid
+      // Diagnostic fallback: try explicit fetch with Authorization header and publishable key
+      try {
+        console.log("[Guest Auth] Diagnostic: explicit fetch /store/customers/me with Authorization header...");
+        const explicitResp = await (sdk.client as any).fetch?.("/store/customers/me", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            "x-publishable-api-key": MEDUSA_PUBLISHABLE_KEY || "",
+          },
+        });
+        console.log("[Guest Auth] Diagnostic explicit /store/customers/me response:", explicitResp);
+      } catch (explicitErr) {
+        console.warn("[Guest Auth] Diagnostic explicit /store/customers/me failed:", explicitErr);
+      }
+
+      try {
+        console.log("[Guest Auth] Diagnostic: explicit fetch /store/customers/me/addresses with Authorization header...");
+        const explicitAddr = await (sdk.client as any).fetch?.("/store/customers/me/addresses?limit=1&fields=id,first_name,last_name,address_1,address_2,city,province,postal_code,country_code,phone,metadata", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            "x-publishable-api-key": MEDUSA_PUBLISHABLE_KEY || "",
+          },
+        });
+        console.log("[Guest Auth] Diagnostic explicit addresses response:", explicitAddr);
+      } catch (explicitAddrErr) {
+        console.warn("[Guest Auth] Diagnostic explicit addresses fetch failed:", explicitAddrErr);
+      }
+      // Final diagnostic: raw window.fetch to backend URL to capture full HTTP response
+      try {
+        const meUrl = `${MEDUSA_BACKEND_URL.replace(/\/$/, "")}/store/customers/me`;
+        console.log("[Guest Auth] Raw fetch diagnostic to:", meUrl);
+        const resp = await (typeof window !== 'undefined' ? window.fetch(meUrl, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'x-publishable-api-key': MEDUSA_PUBLISHABLE_KEY || '',
+          },
+          // include credentials in case server expects cookie-based session
+          credentials: 'include',
+        }) : Promise.reject(new Error('no window')));
+
+        const text = await resp.text();
+        console.log('[Guest Auth] Raw fetch response status:', resp.status, 'headers:', Array.from(resp.headers.entries()));
+        console.log('[Guest Auth] Raw fetch response body:', text);
+      } catch (rawErr) {
+        console.warn('[Guest Auth] Raw fetch diagnostic failed:', rawErr);
+      }
     }
 
     console.log("[Guest Auth] ✅ COMPLETE: Guest auto-authentication successful for", guestEmail);

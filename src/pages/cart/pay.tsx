@@ -22,6 +22,9 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "zmp-ui";
 
+// Feature flag: show/hide tax explanatory text
+const SHOW_TAX_EXPLANATION = import.meta.env.VITE_SHOW_TAX_EXPLANATION === "true";
+
 const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "";
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
@@ -205,20 +208,24 @@ export default function Pay() {
             <span className="text-subtitle">Thuế</span>
             <span>{formatPrice(taxAmount, currencyCode)}</span>
           </div>
-          {isTaxInclusive && taxAmount > 0 && (
+          {SHOW_TAX_EXPLANATION && isTaxInclusive && taxAmount > 0 && (
             <div className="text-[11px] text-subtitle text-right">
               Đã bao gồm {formatPrice(taxAmount, currencyCode)} tiền thuế VAT
             </div>
           )}
-          {!isTaxInclusive && taxAmount > 0 && (
+          {SHOW_TAX_EXPLANATION && !isTaxInclusive && taxAmount > 0 && (
             <div className="text-[11px] text-subtitle text-right">
               Thuế được tính theo cấu hình khu vực và phương thức giao hàng.
             </div>
           )}
-          <div className="h-px bg-black/10 my-1" />
-          <div className="text-[11px] text-subtitle">
-            Medusa tính lại thuế/khuyến mãi/phí ship theo cấu hình của cửa hàng.
-          </div>
+          {SHOW_TAX_EXPLANATION && (
+            <>
+              <div className="h-px bg-black/10 my-1" />
+              <div className="text-[11px] text-subtitle">
+                Medusa tính lại thuế/khuyến mãi/phí ship theo cấu hình của cửa hàng.
+              </div>
+            </>
+          )}
           <div className="flex justify-between text-sm font-medium text-primary">
             <span>Tổng thanh toán</span>
             <span>{formatPrice(totalAmount, currencyCode)}</span>
@@ -252,18 +259,18 @@ export default function Pay() {
 
       {canHandleStripeReturn ? (
         <StripeRedirectReturn
-          clientSecret={redirectClientSecret}
+          clientSecret={redirectClientSecret!}
           onComplete={completeStripePayment}
         />
       ) : canRenderStripeForm ? (
         <StripeCheckoutForm
-          clientSecret={stripeCheckout.clientSecret}
+          clientSecret={stripeCheckout.clientSecret!}
           onComplete={completeStripePayment}
           onCancel={resetStripeCheckout}
         />
       ) : canRenderQRCode ? (
         <QRCodeDisplay
-          qrCodeUrl={qrCheckout.qrCodeUrl}
+          qrCodeUrl={qrCheckout.qrCodeUrl!}
           transferAmount={qrCheckout.transferAmount ?? totalAmount}
           transferContent={qrCheckout.transferContent || `Thanh toan don ${qrCheckout.cartId || ""}`}
           currencyCode={qrCheckout.currencyCode || currencyCode}

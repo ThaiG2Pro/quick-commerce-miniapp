@@ -753,6 +753,17 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
     // If no token exists, silently register and login a guest account
     await ensureGuestAuthOnBootstrap();
 
+    // Initialize user info from Medusa customer
+    try {
+      const customer = await getCurrentCustomer();
+      const userInfo = transformMedusaCustomerToUserInfo(customer);
+      if (userInfo) {
+        localStorage.setItem(CONFIG.STORAGE_KEYS.USER_INFO, JSON.stringify(userInfo));
+      }
+    } catch (error) {
+      console.warn("Failed to initialize user info during bootstrap:", error);
+    }
+
     let regions = get(regionsCacheState);
     if (!regions.length) {
       regions = (await getRegions()) as MedusaRegionLite[];

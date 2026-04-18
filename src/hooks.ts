@@ -17,6 +17,7 @@ import {
   addOrUpdateCartItemState,
   bootstrapStorefrontState,
   createPickupCheckoutAddress,
+  createDefaultShippingAddress,
   deliveryModeState,
   initializeCartState,
   billingAddressState,
@@ -350,21 +351,25 @@ export function useHydrateCheckoutAddresses() {
       localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)
     );
     if (!hasMedusaAuth) {
-      setShippingAddress(undefined);
-      setBillingAddress(undefined);
+      // Use default address as fallback for guest users
+      const defaultAddress = createDefaultShippingAddress();
+      setShippingAddress(defaultAddress);
+      setBillingAddress(defaultAddress);
       return {
-        shippingAddress: undefined,
-        billingAddress: undefined,
+        shippingAddress: defaultAddress,
+        billingAddress: defaultAddress,
       };
     }
 
     const customerAddress = await getCurrentCustomerAddress();
     if (!customerAddress) {
-      setShippingAddress(undefined);
-      setBillingAddress(undefined);
+      // Use default address as fallback when no customer address found
+      const defaultAddress = createDefaultShippingAddress();
+      setShippingAddress(defaultAddress);
+      setBillingAddress(defaultAddress);
       return {
-        shippingAddress: undefined,
-        billingAddress: undefined,
+        shippingAddress: defaultAddress,
+        billingAddress: defaultAddress,
       };
     }
 
@@ -563,7 +568,13 @@ export function useCheckout() {
         );
       }
 
+      if (typeof window !== "undefined") {
+        console.debug("hooks: ensureServerCartFromGuestCart - creating cart", { defaultRegionId });
+      }
       let activeCart = await createCart(defaultRegionId);
+      if (typeof window !== "undefined") {
+        console.debug("hooks: ensureServerCartFromGuestCart - created cart", { cartId: activeCart?.id });
+      }
       for (const item of cart) {
         if (!item.product.variantId || item.quantity <= 0) {
           continue;

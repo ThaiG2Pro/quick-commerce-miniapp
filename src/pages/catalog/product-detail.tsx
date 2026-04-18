@@ -86,6 +86,25 @@ export default function ProductDetailPage() {
                 Loại: {product.type}
               </div>
             )}
+            {selectedVariant && (
+              <div className="text-2xs mt-1">
+                {selectedVariant.manageInventory === false ? (
+                  <span className="text-subtitle">Không quản lý tồn kho</span>
+                ) : typeof selectedVariant.inventoryQuantity === "number" ? (
+                  <span
+                    className={
+                      selectedVariant.inventoryQuantity > 0
+                        ? "text-green-600"
+                        : "text-red-600"
+                    }
+                  >
+                    Tồn kho: {selectedVariant.inventoryQuantity}
+                  </span>
+                ) : (
+                  <span className="text-subtitle">Tồn kho: —</span>
+                )}
+              </div>
+            )}
             {product.tags && product.tags.length > 0 && (
               <div className="text-2xs text-subtitle mt-1 line-clamp-1">
                 Tags: {product.tags.join(", ")}
