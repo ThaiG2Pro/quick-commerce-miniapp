@@ -1,15 +1,16 @@
 import CartList from "./cart-list";
 import ApplyVoucher from "./apply-voucher";
 import CartSummary from "./cart-summary";
-import { useAtomValue } from "jotai";
-import { cartErrorState, cartInitializingState, cartState } from "@/state";
+import { useAtomValue, useSetAtom } from "jotai";
+import { cartErrorState, cartInitializingState, cartState, shippingAddressState, billingAddressState } from "@/state";
 import { useRefreshCart } from "@/hooks";
 import { EmptyCart } from "@/components/empty";
 import Delivery from "./delivery";
 import HorizontalDivider from "@/components/horizontal-divider";
 import Pay from "./pay";
 import { Button } from "zmp-ui";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getCurrentCustomerAddress } from "@/lib/medusa-sdk";
 
 export default function CartPage() {
   const cart = useAtomValue(cartState);
@@ -17,6 +18,32 @@ export default function CartPage() {
   const cartError = useAtomValue(cartErrorState);
   const refreshCart = useRefreshCart();
   const [refreshing, setRefreshing] = useState(false);
+  const setShippingAddress = useSetAtom(shippingAddressState);
+  const setBillingAddress = useSetAtom(billingAddressState);
+
+  // Refresh customer address on cart page entry (Bước 8: fetch customer address từ server)
+  useEffect(() => {
+    let mounted = true;
+
+    const refreshAddress = async () => {
+      try {
+        const customerAddress = await getCurrentCustomerAddress();
+        if (mounted && customerAddress) {
+          setShippingAddress(customerAddress);
+          setBillingAddress(customerAddress);
+        }
+      } catch (error) {
+        console.warn("Failed to refresh address on cart entry:", error);
+        // Keep existing address as fallback
+      }
+    };
+
+    refreshAddress();
+
+    return () => {
+      mounted = false;
+    };
+  }, [setShippingAddress, setBillingAddress]);
 
   const onRefresh = async () => {
     setRefreshing(true);
