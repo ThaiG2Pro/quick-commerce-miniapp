@@ -5,7 +5,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { Button, Input } from "zmp-ui";
-import { updateCurrentCustomer } from "@/lib/medusa-sdk";
+import { getCurrentCustomer, upsertCurrentCustomerAddress, updateCurrentCustomer, DEFAULT_AVATAR_URL } from "@/lib/medusa-sdk";
 import { useRequestInformation } from "@/hooks";
 
 function splitName(value: string) {
@@ -40,19 +40,15 @@ function ProfileEditorPage() {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
         const name = String(data.get("name") || "").trim();
-        const address = String(data.get("address") || "").trim();
         const nameParts = splitName(name || userInfo?.name || "");
 
         setSaving(true);
         try {
-          await requestInfo();
+          // Update customer name
           try {
             await updateCurrentCustomer({
               first_name: nameParts.first_name || undefined,
               last_name: nameParts.last_name || undefined,
-              metadata: {
-                address,
-              },
             });
           } catch (error) {
             const status =
@@ -65,22 +61,36 @@ function ProfileEditorPage() {
               await updateCurrentCustomer({
                 first_name: nameParts.first_name || undefined,
                 last_name: nameParts.last_name || undefined,
-                metadata: {
-                  address,
-                },
               });
             } else {
               throw error;
             }
           }
 
+          // Update customer address if address fields are provided
+          const addressFields = {
+            alias: String(data.get("alias") || "").trim() || userInfo?.address?.split(",")[0] || "",
+            address: String(data.get("address") || "").trim(),
+            address2: String(data.get("address2") || "").trim() || "",
+            city: String(data.get("city") || "").trim(),
+            postalCode: String(data.get("postalCode") || "").trim() || "",
+            province: String(data.get("province") || "").trim() || "",
+            countryCode: "vn",
+            name: `${nameParts.first_name} ${nameParts.last_name}`.trim(),
+            phone: String(data.get("phone") || "").trim() || userInfo?.phone || "",
+          };
+
+          if (addressFields.address && addressFields.city) {
+            await upsertCurrentCustomerAddress(addressFields);
+          }
+
           const newUserInfo = {
             id: userInfo?.id || "",
             name: name || userInfo?.name || "",
-            avatar: userInfo?.avatar || "",
-            phone: userInfo?.phone || "",
+            avatar: userInfo?.avatar || DEFAULT_AVATAR_URL,
+            phone: addressFields.phone || userInfo?.phone || "",
             email: userInfo?.email || "",
-            address: address || userInfo?.address || "",
+            address: addressFields.address || userInfo?.address || "",
           };
 
           localStorage.setItem(
@@ -90,6 +100,9 @@ function ProfileEditorPage() {
           refreshUserInfo();
           toast.success("Đã cập nhật thông tin tài khoản");
           navigate(-1);
+        } catch (error) {
+          console.error("Failed to update profile:", error);
+          toast.error("Không thể lưu thông tin. Vui lòng thử lại.");
         } finally {
           setSaving(false);
         }
@@ -98,10 +111,46 @@ function ProfileEditorPage() {
       <div className="bg-section p-4 grid gap-4">
         <Input name="name" label="Họ tên" defaultValue={userInfo?.name} />
         <Input
+          name="phone"
+          label="Số điện thoại"
+          placeholder="Nhập số điện thoại"
+          defaultValue={userInfo?.phone}
+        />
+        <Input
+          name="alias"
+          label="Tên địa chỉ"
+          placeholder="Ví dụ: nhà, công ty"
+          defaultValue={""}
+        />
+        <Input
           name="address"
           label="Địa chỉ"
-          placeholder="Nhập dịa chỉ"
-          defaultValue={userInfo?.address}
+          placeholder="Nhập địa chỉ"
+          defaultValue={""}
+        />
+        <Input
+          name="address2"
+          label="Địa chỉ (tiếp)"
+          placeholder="Tòa nhà, số căn (không bắt buộc)"
+          defaultValue={""}
+        />
+        <Input
+          name="city"
+          label="Thành phố/Tỉnh"
+          placeholder="Nhập thành phố"
+          defaultValue={""}
+        />
+        <Input
+          name="province"
+          label="Quận/Huyện"
+          placeholder="Nhập quận/huyện"
+          defaultValue={""}
+        />
+        <Input
+          name="postalCode"
+          label="Mã bưu điện"
+          placeholder="Nhập mã bưu điện"
+          defaultValue={""}
         />
       </div>
       <div className="p-6 pt-4 bg-section">

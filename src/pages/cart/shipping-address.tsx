@@ -44,6 +44,12 @@ function ShippingAddressPage() {
           newAddress[key] = String(value);
         });
 
+        // Validate required address fields
+        if (!newAddress.address || !newAddress.city || !newAddress.name) {
+          toast.error("Vui lòng điền đủ thông tin địa chỉ (địa chỉ, thành phố, tên)");
+          return;
+        }
+
         try {
           setSaving(true);
           const customer = await getCurrentCustomer();

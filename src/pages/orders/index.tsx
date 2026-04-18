@@ -7,20 +7,32 @@ function OrdersPage() {
   const { status } = useParams();
   const navigate = useNavigate();
 
+  // Default to 'all' if no status provided
+  const activeTab = status || "all";
+
   return (
     <Tabs
       className="h-full flex flex-col"
-      activeKey={status}
-      onChange={(status) => navigate(`/orders/${status}`)}
+      activeKey={activeTab}
+      onChange={(tabStatus) => navigate(`/orders/${tabStatus}`)}
     >
-      <Tabs.Tab key="pending" label="Đang xử lý">
-        <OrderList ordersState={ordersState("pending")} />
+      <Tabs.Tab key="all" label="Tất cả">
+        <OrderList ordersState={ordersState("all")} />
+      </Tabs.Tab>
+      <Tabs.Tab key="pending_confirmation" label="Chờ xác nhận">
+        <OrderList ordersState={ordersState("pending_confirmation")} />
       </Tabs.Tab>
       <Tabs.Tab key="shipping" label="Đang giao">
         <OrderList ordersState={ordersState("shipping")} />
       </Tabs.Tab>
-      <Tabs.Tab key="completed" label="Lịch sử">
+      <Tabs.Tab key="awaiting_payment" label="Chờ thu tiền">
+        <OrderList ordersState={ordersState("awaiting_payment")} />
+      </Tabs.Tab>
+      <Tabs.Tab key="completed" label="Hoàn thành">
         <OrderList ordersState={ordersState("completed")} />
+      </Tabs.Tab>
+      <Tabs.Tab key="cancelled" label="Đã hủy">
+        <OrderList ordersState={ordersState("cancelled")} />
       </Tabs.Tab>
     </Tabs>
   );

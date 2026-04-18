@@ -127,6 +127,7 @@ export type Delivery =
 
 export type OrderStatus = "pending" | "shipping" | "completed";
 export type PaymentStatus = "pending" | "success" | "failed";
+export type OrderTabStatus = "all" | "pending_confirmation" | "shipping" | "awaiting_payment" | "completed" | "cancelled";
 
 export interface Order {
   id: number;
@@ -139,6 +140,11 @@ export interface Order {
   delivery: Delivery;
   total: number;
   note: string;
+  
+  // Raw Medusa status for advanced filtering
+  medusaStatus?: string;
+  fulfillmentStatus?: string;
+  paymentStatusRaw?: string;
 }
 
 // Medusa-specific types (from Medusa JS SDK)

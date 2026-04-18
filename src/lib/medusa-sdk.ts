@@ -28,6 +28,10 @@ export const sdk = new Medusa({
   },
 });
 
+// Default avatar used when no avatar is available from Medusa or metadata
+export const DEFAULT_AVATAR_URL =
+  "https://upload.wikimedia.org/wikipedia/commons/7/7c/Profile_avatar_placeholder_large.png";
+
 // Ensure publishable key header is always sent with store requests.
 // Some Medusa deployments require `x-publishable-api-key` on store endpoints.
 // Wrap sdk.client.fetch to inject the header if the SDK didn't do it.
@@ -990,7 +994,7 @@ export function transformMedusaCustomerToUserInfo(customer: unknown): UserInfo |
       record.avatar ||
       record.image ||
       (typeof metadata.avatar === "string" ? metadata.avatar : "") ||
-      "",
+      DEFAULT_AVATAR_URL,
     phone:
       record.phone ||
       (typeof metadata.phone === "string" ? metadata.phone : "") ||

@@ -60,6 +60,7 @@ import {
   ensureGuestAuthOnBootstrap,
   getStoredGuestEmail,
 } from "@/lib/medusa-sdk";
+import { DEFAULT_AVATAR_URL } from "@/lib/medusa-sdk";
 import {
   normalizeMockCategory,
   transformCategory,
@@ -67,6 +68,7 @@ import {
   transformMedusaCartPricing,
   transformMedusaOrders,
   transformProducts,
+  filterOrdersByTab,
 } from "@/lib/medusa-transformers";
 
 const PRODUCT_QUERY_FIELDS =
@@ -117,7 +119,7 @@ export const userInfoState = atom<Promise<UserInfo | undefined>>(async (get) => 
       const mergedUserInfo: UserInfo = {
         id: storedUserInfo?.id || medusaUserInfo.id || "",
         name: storedUserInfo?.name || medusaUserInfo.name || "",
-        avatar: storedUserInfo?.avatar || medusaUserInfo.avatar || "",
+        avatar: storedUserInfo?.avatar || medusaUserInfo.avatar || DEFAULT_AVATAR_URL,
         phone: storedUserInfo?.phone || medusaUserInfo.phone || "",
         email: storedUserInfo?.email || medusaUserInfo.email || "",
         address: storedUserInfo?.address || medusaUserInfo.address || "",
@@ -759,6 +761,8 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
       const userInfo = transformMedusaCustomerToUserInfo(customer);
       if (userInfo) {
         localStorage.setItem(CONFIG.STORAGE_KEYS.USER_INFO, JSON.stringify(userInfo));
+        // Notify atoms that user info changed so UI updates immediately
+        set(userInfoKeyState, (v) => (typeof v === "number" ? v + 1 : 1));
       }
     } catch (error) {
       console.warn("Failed to initialize user info during bootstrap:", error);
@@ -1130,7 +1134,7 @@ export const selectedStationState = atom(async (get) => {
 export const shippingAddressState = atom<ShippingAddress | undefined>(undefined);
 export const billingAddressState = atom<ShippingAddress | undefined>(undefined);
 
-export const ordersState = atomFamily((status: OrderStatus) =>
+export const ordersState = atomFamily((tabStatus: string) =>
   atomWithRefresh(async () => {
     if (!localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)) {
       return [];
@@ -1141,11 +1145,11 @@ export const ordersState = atomFamily((status: OrderStatus) =>
         limit: 50,
         offset: 0,
       });
-      const transformedOrders = transformMedusaOrders(medusaOrders)
-        .filter((order) => order.status === status)
+      const transformedOrders = transformMedusaOrders(medusaOrders);
+      const filteredOrders = filterOrdersByTab(transformedOrders, tabStatus)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
-      return transformedOrders;
+      return filteredOrders;
     } catch (error) {
       console.error("Cannot load orders from Medusa:", error);
       const statusCode = getErrorStatusCode(error);

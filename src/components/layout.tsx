@@ -7,6 +7,7 @@ import { Toaster } from "react-hot-toast";
 import { ScrollRestoration } from "./scroll-restoration";
 import FloatingCartPreview from "./floating-cart-preview";
 import { useBootstrapStorefront } from "@/hooks";
+import DemoNotice from "./demo-notice";
 
 export default function Layout() {
   const bootstrapStorefront = useBootstrapStorefront();
@@ -24,6 +25,7 @@ export default function Layout() {
         </Suspense>
       </div>
       <Footer />
+      <DemoNotice />
       <Toaster
         containerClassName="toast-container"
         containerStyle={{

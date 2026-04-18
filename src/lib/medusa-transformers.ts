@@ -389,7 +389,60 @@ export function transformMedusaOrders(orders: any[]): Order[] {
         (order?.metadata?.note as string | undefined) ||
         (order?.customer_note as string | undefined) ||
         "",
+      
+      // Store raw Medusa status for advanced filtering
+      medusaStatus: order?.status,
+      fulfillmentStatus: order?.fulfillment_status,
+      paymentStatusRaw: order?.payment_status,
     } satisfies Order;
+  });
+}
+
+/**
+ * Filter orders by tab status based on Medusa order statuses
+ * 
+ * Tab mappings:
+ * - all: All orders
+ * - pending_confirmation: status=pending + fulfillment_status=not_fulfilled
+ * - shipping: fulfillment_status=shipped
+ * - awaiting_payment: fulfillment_status=delivered + payment_status=authorized (COD payment waiting)
+ * - completed: status=completed
+ * - cancelled: status=canceled
+ */
+export function filterOrdersByTab(orders: Order[], tabStatus: string): Order[] {
+  if (tabStatus === "all") {
+    return orders;
+  }
+
+  return orders.filter((order) => {
+    const fulfillment = String(order.fulfillmentStatus || "").toLowerCase();
+    const medusaStatus = String(order.medusaStatus || "").toLowerCase();
+    const paymentStatus = String(order.paymentStatusRaw || "").toLowerCase();
+
+    switch (tabStatus) {
+      case "pending_confirmation":
+        // Pending orders waiting for fulfillment (admin hasn't created fulfillment yet)
+        return medusaStatus === "pending" && fulfillment === "not_fulfilled";
+
+      case "shipping":
+        // Orders that have been shipped
+        return fulfillment === "shipped";
+
+      case "awaiting_payment":
+        // Orders delivered but payment not captured (COD waiting for collection)
+        return fulfillment === "delivered" && paymentStatus === "authorized";
+
+      case "completed":
+        // Orders fully completed
+        return medusaStatus === "completed";
+
+      case "cancelled":
+        // Cancelled orders
+        return medusaStatus === "canceled";
+
+      default:
+        return true;
+    }
   });
 }
 

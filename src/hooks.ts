@@ -56,6 +56,7 @@ import {
   upsertCurrentCustomerAddress,
   updateCartAddresses,
 } from "@/lib/medusa-sdk";
+import { DEFAULT_AVATAR_URL } from "@/lib/medusa-sdk";
 
 type ZaloProfilePayload = {
   id?: string;
@@ -109,7 +110,8 @@ function normalizeUserInfo(
   return {
     id: authUser.id || fallbackUserInfo.id,
     name: authUser.name || fallbackUserInfo.name,
-    avatar: authUser.avatar || authUser.picture?.data?.url || fallbackUserInfo.avatar,
+    avatar:
+      authUser.avatar || authUser.picture?.data?.url || fallbackUserInfo.avatar || DEFAULT_AVATAR_URL,
     phone: authUser.phone || fallbackUserInfo.phone,
     email: authUser.email || fallbackUserInfo.email,
     address: authUser.address || fallbackUserInfo.address,
@@ -254,7 +256,7 @@ export function useRequestInformation() {
       (await getUserInfo({}).then(({ userInfo: profile }) => ({
         id: profile.id || "",
         name: profile.name || "",
-        avatar: profile.avatar || "",
+        avatar: profile.avatar || DEFAULT_AVATAR_URL,
         phone: "",
         email: "",
         address: "",
@@ -290,7 +292,7 @@ export function useRequestInformation() {
       const mergedUserInfo: UserInfo = {
         id: medusaUserInfo.id || baseUserInfo.id,
         name: medusaUserInfo.name || baseUserInfo.name,
-        avatar: medusaUserInfo.avatar || baseUserInfo.avatar,
+        avatar: medusaUserInfo.avatar || baseUserInfo.avatar || DEFAULT_AVATAR_URL,
         phone: medusaUserInfo.phone || baseUserInfo.phone,
         email: medusaUserInfo.email || baseUserInfo.email,
         address: medusaUserInfo.address || baseUserInfo.address,
