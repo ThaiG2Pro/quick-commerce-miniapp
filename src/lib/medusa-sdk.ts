@@ -274,9 +274,15 @@ export async function getCategories(params?: {
  */
 export async function createCart(regionId?: string) {
   try {
+    if (typeof window !== "undefined") {
+      console.debug("medusa-sdk: createCart called", { regionId });
+    }
     const response = await sdk.store.cart.create(
       regionId ? { region_id: regionId } : {}
     );
+    if (typeof window !== "undefined") {
+      console.debug("medusa-sdk: createCart response", { cartId: response.cart?.id });
+    }
     return response.cart;
   } catch (error) {
     console.error("Error creating cart:", error);
@@ -439,10 +445,13 @@ export async function listCartShippingOptions(cartId: string) {
 /**
  * Lấy danh sách payment providers khả dụng dựa theo region của cart.
  */
-export async function listCartPaymentProviders(cartId: string, regionId?: string) {
+export async function listCartPaymentProviders(cartId?: string, regionId?: string) {
   try {
     let resolvedRegionId = regionId;
     if (!resolvedRegionId) {
+      if (!cartId) {
+        return [];
+      }
       const cartResponse = await sdk.store.cart.retrieve(cartId);
       resolvedRegionId = cartResponse.cart?.region?.id;
     }
@@ -967,7 +976,13 @@ export async function searchProducts(query: string, params?: {
  */
 export async function getRegions() {
   try {
+    // Cache regions to avoid duplicate network requests during app bootstrap
+    // or concurrent atom reads. This is a lightweight in-memory cache.
+    if ((getRegions as any)._cachedRegions) {
+      return (getRegions as any)._cachedRegions as unknown as ReturnType<typeof sdk.store.region.list>;
+    }
     const response = await sdk.store.region.list();
+    (getRegions as any)._cachedRegions = response.regions;
     return response.regions;
   } catch (error) {
     console.error("Error fetching regions:", error);
@@ -1237,6 +1252,193 @@ export async function clearMedusaAuthFromStorage() {
   localStorage.removeItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN);
   sdk.client.clearToken();
   return true;
+}
+
+// ==================== GUEST AUTO-AUTH FLOW ====================
+
+const GUEST_FIXED_PASSWORD = "password";
+const GUEST_EMAIL_DOMAIN = "@q-com.com";
+const GUEST_EMAIL_PREFIX = "guest_";
+
+/**
+ * Generate a UUIDv7-like string for guest email uniqueness.
+ * Simple implementation: 8-char random hex string based on timestamp and randomness
+ */
+function generateGuestUuid(): string {
+  const timestamp = Date.now();
+  const random = Math.floor(Math.random() * 0xffffff);
+  const combined = (timestamp << 24) | random;
+  return combined.toString(16).padStart(12, '0');
+}
+
+/**
+ * Generate a random guest email with UUIDv7 format
+ */
+export function generateGuestEmail(): string {
+  const uuid = generateGuestUuid();
+  return `${GUEST_EMAIL_PREFIX}${uuid}${GUEST_EMAIL_DOMAIN}`;
+}
+
+/**
+ * Perform guest auto-authentication:
+ * 1. Generate random guest email
+ * 2. Register with fixed password
+ * 3. Login and save JWT token
+ * 4. Return guest email for later use
+ */
+export async function performGuestAutoAuth(): Promise<{
+  email: string;
+  success: boolean;
+  error?: unknown;
+}> {
+  const guestEmail = generateGuestEmail();
+  console.log("[Guest Auth] Starting auto-authentication with email:", guestEmail);
+
+  try {
+    // Step 1: Try to register as a new guest customer
+    console.log("[Guest Auth] Step 1: Attempting to register guest customer...");
+    try {
+      const registerResponse = await registerCustomer(guestEmail, GUEST_FIXED_PASSWORD);
+      console.log("[Guest Auth] Step 1 SUCCESS: Customer registered");
+    } catch (registerError: unknown) {
+      // If email already exists (very unlikely but possible in edge cases),
+      // we'll proceed to login. In normal cases, registration should succeed.
+      const errorStatus = getErrorStatusCode(registerError);
+      console.warn("[Guest Auth] Step 1 CONFLICT (email might exist): status=", errorStatus, registerError);
+      if (errorStatus === 400 || errorStatus === 409) {
+        console.log("[Guest Auth] Proceeding to login with existing email...");
+      } else {
+        throw registerError;
+      }
+    }
+
+    // Step 2: Login as guest - this returns the JWT token directly
+    // Medusa SDK's auth.login() returns the token as a string and also sets it internally
+    console.log("[Guest Auth] Step 2: Attempting to login guest customer...");
+    const authToken = await loginCustomer(guestEmail, GUEST_FIXED_PASSWORD);
+    
+    if (!authToken || typeof authToken !== 'string') {
+      console.error("[Guest Auth] Step 2 FAILED: No valid JWT token returned from login. Got:", authToken);
+      throw new Error("Guest login did not return a valid JWT token");
+    }
+    
+    console.log("[Guest Auth] Step 2 SUCCESS: JWT token received from login, length:", authToken.length);
+
+    // Step 3: Save token to localStorage for session persistence
+    console.log("[Guest Auth] Step 3: Saving credentials to localStorage...");
+    if (typeof window !== "undefined") {
+      localStorage.setItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN, authToken);
+      localStorage.setItem("guestEmail", guestEmail);
+      console.log("[Guest Auth] Step 3 SUCCESS: Credentials saved to localStorage");
+    }
+
+    // Step 4: Verify authentication is working
+    console.log("[Guest Auth] Step 4: Verifying authentication...");
+    try {
+      const customer = await getCurrentCustomer();
+      if (customer && customer.email) {
+        console.log("[Guest Auth] Step 4 SUCCESS: Verified - current customer email:", customer.email);
+
+        // Step 5: Upsert default shipping/billing address for this customer
+        try {
+          const defaultAddress = {
+            alias: "",
+            address: "Uit",
+            address2: undefined,
+            city: "Hồ Chí Minh",
+            province: undefined,
+            postalCode: "73000",
+            countryCode: "vn",
+            name: `Thái hàng`,
+            phone: "0566464459",
+          } as import("@/types").ShippingAddress;
+
+          console.log("[Guest Auth] Step 5: Upserting default customer address...");
+          await upsertCurrentCustomerAddress(defaultAddress);
+          console.log("[Guest Auth] Step 5 SUCCESS: Default address upserted for customer", customer.email);
+        } catch (addrErr) {
+          console.warn("[Guest Auth] Step 5 WARNING: Failed to upsert default address:", addrErr);
+        }
+      }
+    } catch (verifyError) {
+      console.warn("[Guest Auth] Step 4 WARNING: Could not verify customer:", verifyError);
+      // Don't fail - token might still be valid
+    }
+
+    console.log("[Guest Auth] ✅ COMPLETE: Guest auto-authentication successful for", guestEmail);
+    return { email: guestEmail, success: true };
+  } catch (error) {
+    console.error("[Guest Auth] ❌ FAILED: Auto-authentication failed:", error);
+    return { 
+      email: guestEmail, 
+      success: false, 
+      error 
+    };
+  }
+}
+
+/**
+ * Get the stored guest email (for reference/debugging).
+ * This is the email that was auto-generated and used for guest authentication.
+ */
+export function getStoredGuestEmail(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  return localStorage.getItem("guestEmail") || null;
+}
+
+/**
+ * Check if user is authenticated (has valid JWT token).
+ * If not, and no token in storage, perform guest auto-auth.
+ * This is called during bootstrap.
+ */
+export async function ensureGuestAuthOnBootstrap(): Promise<void> {
+  console.log("[Guest Auth Bootstrap] Starting...");
+  try {
+    if (typeof window !== "undefined") {
+      // On the very first app bootstrap run we clear any previously stored
+      // Medusa auth token to avoid stale provider/legacy tokens (e.g. Zalo)
+      // interfering with our guest auto-register/login flow. This is done
+      // only once and recorded by a bootstrapped flag so returning users
+      // aren't logged out on subsequent visits.
+      const bootstrappedKey = CONFIG.STORAGE_KEYS.BOOTSTRAPPED;
+      const isBootstrapped = Boolean(localStorage.getItem(bootstrappedKey));
+      if (!isBootstrapped) {
+        console.log(
+          "[Guest Auth Bootstrap] First run detected — clearing stored Medusa auth token to avoid stale provider flows."
+        );
+        await clearMedusaAuthFromStorage();
+        try {
+          localStorage.setItem(bootstrappedKey, "1");
+        } catch (e) {
+          console.warn("[Guest Auth Bootstrap] Could not set bootstrapped flag in localStorage:", e);
+        }
+      }
+    }
+
+    // Check if token is already set in SDK/storage after first-run clearing
+    const storedToken = typeof window !== "undefined"
+      ? localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)
+      : null;
+
+    if (storedToken) {
+      // Token already exists, no need for guest auth
+      console.log("[Guest Auth Bootstrap] ✓ Token already exists in localStorage, skipping auto-auth");
+      return;
+    }
+
+    console.log("[Guest Auth Bootstrap] No token found, performing guest auto-auth...");
+    // No token in storage, perform guest auto-auth
+    const result = await performGuestAutoAuth();
+    if (!result.success) {
+      // Auto-auth failed, but we don't throw error - let app continue in guest mode
+      console.warn("[Guest Auth Bootstrap] ⚠ Could not establish guest authentication, app will work in limited guest mode. Error:", result.error);
+    }
+  } catch (error) {
+    // Catch-all: don't let auth failures block app bootstrap
+    console.error("[Guest Auth Bootstrap] ❌ Unexpected error during guest auth bootstrap:", error);
+  }
 }
 
 export default sdk;
