@@ -3,6 +3,7 @@ import { selectedStationIndexState, stationsState } from "@/state";
 import type { Station } from "@/types";
 import { useAtomValue, useSetAtom } from "jotai";
 import { Suspense } from "react";
+import OptimizedImage from "@/components/optimized-image";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 
@@ -20,7 +21,7 @@ function Station({
     >
       <div className="h-14 w-14 rounded-lg bg-skeleton flex items-center justify-center text-2xs text-subtitle">
         {station.image ? (
-          <img src={station.image} className="h-14 w-14 rounded-lg bg-skeleton" />
+          <OptimizedImage src={station.image} className="h-14 w-14 rounded-lg bg-skeleton" widths={[56,112,224]} sizes="56px" alt={station.name} />
         ) : (
           "Kho"
         )}

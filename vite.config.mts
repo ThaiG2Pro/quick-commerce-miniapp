@@ -23,6 +23,7 @@ export default () => {
       },
     },
     build: {
+      target: 'es2020',
       sourcemap: false,
       rollupOptions: {
         output: {
