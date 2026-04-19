@@ -28,10 +28,15 @@ export default () => {
         output: {
           manualChunks(id: string) {
             // Only split node_modules
-            if (!id.includes("node_modules")) return undefined;
+            const nm = 'node_modules';
+            if (!id.includes(nm)) return undefined;
 
-            // Extract package name from path: node_modules/<pkg>/... or node_modules/@scope/pkg/...
-            const parts = id.split('node_modules/')[1].split('/');
+            // Support pnpm layout: node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg>/...
+            const match = id.match(/node_modules(?:\/\.pnpm\/[^^\/]+\/node_modules)?\/(?:@[^\/]+\/[^^\/]+|[^\/]+)/);
+            const pkgPath = match ? match[0].split('node_modules/')[1] : id.split('node_modules/')[1];
+
+            // Normalize package name (handle scoped packages)
+            const parts = pkgPath.split('/');
             const pkgName = parts[0].startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
 
             // Strongly group react/react-dom and related libs together
