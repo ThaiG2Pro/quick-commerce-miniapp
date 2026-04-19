@@ -27,24 +27,23 @@ export default () => {
       rollupOptions: {
         output: {
           manualChunks(id: string) {
-            // Only split node_modules
-            const nm = 'node_modules';
-            if (!id.includes(nm)) return undefined;
+            if (!/node_modules/.test(id)) return undefined;
 
-            // Support pnpm layout: node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg>/...
-            const match = id.match(/node_modules(?:\/\.pnpm\/[^^\/]+\/node_modules)?\/(?:@[^\/]+\/[^^\/]+|[^\/]+)/);
-            const pkgPath = match ? match[0].split('node_modules/')[1] : id.split('node_modules/')[1];
+            // Match package name, supports pnpm nested layout
+            const m = id.match(/node_modules(?:\/\.pnpm\/[^\/]+\/node_modules)?\/(?:@[^\/]+\/[^[\/]+|[^\/]+)/);
+            // Better capture group for package name
+            const m2 = id.match(/node_modules(?:\/\.pnpm\/[^\/]+\/node_modules)?\/(?:@[^\/]+\/[^[\/]+|[^\/]+)/);
 
-            // Normalize package name (handle scoped packages)
-            const parts = pkgPath.split('/');
-            const pkgName = parts[0].startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
+            const capture = id.match(/node_modules(?:\/\.pnpm\/[^\/]+\/node_modules)?\/(?:@[^\/]+\/[^[\/]+|[^\/]+)/);
 
-            // Strongly group react/react-dom and related libs together
+            // Use a more reliable capture for package name
+            const pkgMatch = id.match(/node_modules(?:\/\.pnpm\/[^\/]+\/node_modules)?\/(@?[^\/]+\/?[^\/]*)/);
+            const pkgName = pkgMatch ? pkgMatch[1] : id.split('node_modules/')[1].split('/')[0];
+
             if (pkgName === 'react' || pkgName === 'react-dom' || pkgName.startsWith('react')) {
               return 'vendor-react';
             }
 
-            // Explicit mappings for large libs
             const map: Record<string, string> = {
               '@medusajs/js-sdk': 'vendor-medusa',
               'zmp-sdk': 'vendor-zmp',
@@ -58,7 +57,6 @@ export default () => {
 
             if (map[pkgName]) return map[pkgName];
 
-            // Fallback: create one chunk per package to avoid a single large `vendor` chunk
             return `vendor-${pkgName.replace('/', '-')}`;
           }
         },
