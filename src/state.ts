@@ -25,10 +25,7 @@ import {
 } from "@/types";
 import { requestWithFallback } from "@/utils/request";
 import { getConfig } from "@/utils/template";
-import {
-  getLocation,
-  getPhoneNumber,
-} from "zmp-sdk/apis";
+import * as zmp from "@/lib/zmp";
 import { calculateDistance } from "./utils/location";
 import { formatDistant } from "./utils/format";
 import CONFIG from "./config";
@@ -193,7 +190,7 @@ export const loyaltyProfileState = atom(async (get) => {
 export const phoneState = atom(async () => {
   let phone = "";
   try {
-    await getPhoneNumber({});
+    await zmp.getPhoneNumber({});
     // Phía tích hợp làm theo hướng dẫn tại https://mini.zalo.me/documents/api/getPhoneNumber/ để chuyển đổi token thành số điện thoại người dùng ở server.
     // phone = await decodeToken(token);
   } catch (error) {
@@ -1111,7 +1108,7 @@ export const productsByCategoryHandleState = atomFamily((handle: string) =>
 export const stationsState = atom(async (get) => {
   let location: Location | undefined;
   try {
-    await getLocation({});
+    await zmp.getLocation({});
     // Phía tích hợp làm theo hướng dẫn tại https://mini.zalo.me/documents/api/getLocation/ để chuyển đổi token thành thông tin vị trí người dùng ở server.
     // location = await decodeToken(token);
   } catch (error) {

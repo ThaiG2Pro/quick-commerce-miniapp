@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Button } from "zmp-ui";
 import { useAddToCart } from "@/hooks";
 import QuantityInput from "./quantity-input";
+import OptimizedImage from "./optimized-image";
 
 export interface ProductItemProps {
   product: Product;
@@ -41,8 +42,9 @@ export default function ProductItem(props: ProductItemProps) {
       >
         {({ isTransitioning }) => (
           <>
-            <img
+            <OptimizedImage
               src={props.product.image}
+              alt={props.product.name}
               className="w-full aspect-square object-cover rounded-lg"
               style={{
                 viewTransitionName:
@@ -50,7 +52,6 @@ export default function ProductItem(props: ProductItemProps) {
                     ? `product-image-${props.product.id}`
                     : undefined,
               }}
-              alt={props.product.name}
             />
             <div className="pt-2 pb-1.5">
               <div className="pt-1 pb-0.5">

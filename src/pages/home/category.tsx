@@ -1,4 +1,5 @@
 import TransitionLink from "@/components/transition-link";
+import OptimizedImage from "@/components/optimized-image";
 import { useAtomValue } from "jotai";
 import { categoriesState } from "@/state";
 
@@ -20,7 +21,7 @@ export default function Category() {
           className="flex flex-col items-center space-y-1 flex-none overflow-hidden cursor-pointer mx-auto"
           to={`/category/${category.handle}`}
         >
-          <img
+          <OptimizedImage
             src={category.image}
             className="w-12 h-12 object-cover rounded-full bg-skeleton"
             alt={category.name}

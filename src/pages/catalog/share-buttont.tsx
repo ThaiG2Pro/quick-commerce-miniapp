@@ -1,6 +1,6 @@
 import { ShareDecor } from "@/components/vectors";
 import { Product } from "@/types";
-import { openShareSheet } from "zmp-sdk/apis";
+import { openShareSheet } from "@/lib/zmp";
 import { Icon } from "zmp-ui";
 
 export default function ShareButton(props: { product: Product }) {
@@ -12,6 +12,8 @@ export default function ShareButton(props: { product: Product }) {
         thumbnail: props.product.image,
         path: `/product/${props.product.id}`,
       },
+    }).catch(() => {
+      // ignore when not running inside Zalo
     });
   };
 

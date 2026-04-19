@@ -36,7 +36,7 @@ import {
 import { Product, UserInfo } from "@/types";
 import { getConfig } from "@/utils/template";
 import CONFIG from "@/config";
-import { authorize, getAccessToken, getUserInfo, openChat } from "zmp-sdk/apis";
+import * as zmp from "@/lib/zmp";
 import { useAtomCallback } from "jotai/utils";
 import {
   addToCart as addLineItem,
@@ -236,13 +236,13 @@ export function useRequestInformation() {
   const refreshPermissions = () => setInfoKey((key) => key + 1);
 
   const loginWithZalo = async () => {
-    let accessToken = await getAccessToken();
+    let accessToken = await zmp.getAccessToken();
     if (!accessToken) {
-      await authorize({
+      await zmp.authorize({
         scopes: ["scope.userInfo", "scope.userPhonenumber"],
       });
       refreshPermissions();
-      accessToken = await getAccessToken();
+      accessToken = await zmp.getAccessToken();
     }
 
     if (!accessToken) {
@@ -253,7 +253,7 @@ export function useRequestInformation() {
     const refreshedUserInfo = await getStoredUserInfo();
     const fallbackUserInfo: UserInfo =
       refreshedUserInfo ||
-      (await getUserInfo({}).then(({ userInfo: profile }) => ({
+      (await zmp.getUserInfo({}).then(({ userInfo: profile }) => ({
         id: profile.id || "",
         name: profile.name || "",
         avatar: profile.avatar || DEFAULT_AVATAR_URL,
@@ -480,7 +480,7 @@ export function useRefreshCart() {
 
 export function useCustomerSupport() {
   return () =>
-    openChat({
+    zmp.openChat({
       type: "oa",
       id: getConfig((config) => config.template.oaIDtoOpenChat),
     });

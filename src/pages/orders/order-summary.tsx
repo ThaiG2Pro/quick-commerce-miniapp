@@ -31,13 +31,16 @@ function OrderSummary(props: { order: Order; full?: boolean }) {
                 : "text-primary"
             }`}
           >
-            {
-              {
+            {(() => {
+              const fulfillment = String(props.order.fulfillmentStatus || "").toLowerCase();
+              if (fulfillment === "fulfilled") return "Đã xác nhận";
+              if (fulfillment === "shipped") return "Đang giao tới";
+              return ({
                 pending: "Chờ xác nhận",
                 shipping: "Đang giao",
                 completed: "Hoàn thành",
-              }[props.order.status]
-            }
+              } as Record<string, string>)[props.order.status] || "Đang xử lý";
+            })()}
           </span>
         </div>
       }

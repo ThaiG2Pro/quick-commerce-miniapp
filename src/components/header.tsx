@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { useRouteHandle } from "@/hooks";
 import headerIllus from "@/static/header-illus.svg";
 import SearchBar from "./search-bar";
+import OptimizedImage from "./optimized-image";
 import TransitionLink from "./transition-link";
 import { Icon } from "zmp-ui";
 import { DefaultUserAvatar } from "./vectors";
@@ -43,9 +44,10 @@ export default function Header() {
       <div className="w-full min-h-12 pr-[90px] flex py-2 space-x-2 items-center">
         {handle?.logo ? (
           <>
-            <img
+            <OptimizedImage
               src={storefrontProfile.logoUrl}
               className="flex-none w-8 h-8 rounded-full"
+              alt={storefrontProfile.shopName}
             />
             <TransitionLink to="/stations" className="flex-1 overflow-hidden">
               <div className="flex items-center space-x-1">
@@ -84,9 +86,10 @@ export default function Header() {
           />
           <TransitionLink to="/profile">
             {userInfo.state === "hasData" && userInfo.data ? (
-              <img
+              <OptimizedImage
                 className="w-8 h-8 rounded-full"
                 src={userInfo.data.avatar}
+                alt={userInfo.data?.name || 'avatar'}
               />
             ) : (
               <DefaultUserAvatar

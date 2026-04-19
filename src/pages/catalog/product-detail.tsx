@@ -9,6 +9,7 @@ import { useAddToCart } from "@/hooks";
 import { Button } from "zmp-ui";
 import Section from "@/components/section";
 import { useEffect, useMemo, useState } from "react";
+import OptimizedImage from "@/components/optimized-image";
 
 export default function ProductDetailPage() {
   const { id } = useParams();
@@ -48,7 +49,7 @@ export default function ProductDetailPage() {
     <div className="w-full h-full flex flex-col">
       <div className="flex-1 overflow-y-auto">
         <div className="w-full p-4 pb-2 space-y-4 bg-section">
-          <img
+          <OptimizedImage
             key={product.id}
             src={product.image}
             alt={product.name}

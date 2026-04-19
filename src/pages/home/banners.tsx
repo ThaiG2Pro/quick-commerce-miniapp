@@ -1,4 +1,5 @@
 import Carousel from "@/components/carousel";
+import OptimizedImage from "@/components/optimized-image";
 import { useAtomValue } from "jotai";
 import { bannersState } from "@/state";
 
@@ -7,8 +8,8 @@ export default function Banners() {
 
   return (
     <Carousel
-      slides={banners.map((banner) => (
-        <img className="w-full rounded" src={banner} />
+      slides={banners.map((banner, i) => (
+        <OptimizedImage key={i} className="w-full rounded" src={banner} alt={`banner-${i}`} />
       ))}
     />
   );

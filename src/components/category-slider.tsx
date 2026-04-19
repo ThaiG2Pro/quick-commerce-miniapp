@@ -2,6 +2,7 @@ import { categoriesState } from "@/state";
 import { useAtomValue } from "jotai";
 import { useParams } from "react-router-dom";
 import TransitionLink from "./transition-link";
+import OptimizedImage from "./optimized-image";
 
 export default function CategorySlider() {
   const { handle } = useParams();
@@ -19,9 +20,10 @@ export default function CategorySlider() {
               : "bg-section"
           )}
         >
-          <img
+          <OptimizedImage
             src={category.image}
             className="w-6 h-6 rounded-full bg-skeleton"
+            alt={category.name}
           />
           <p className="text-xs whitespace-nowrap">{category.name}</p>
         </TransitionLink>

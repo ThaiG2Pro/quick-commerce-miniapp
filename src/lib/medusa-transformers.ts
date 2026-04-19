@@ -274,17 +274,39 @@ export function transformMedusaCartPricing(cart: MedusaCart): CartPricing {
 }
 
 function mapOrderStatus(order: any): OrderStatus {
+  // Prefer authoritative Medusa fields: fulfillment_status and payment_status.
+  const fulfillment = String(order?.fulfillment_status || "").toLowerCase();
+  const payment = String(order?.payment_status || order?.payment_status_raw || "").toLowerCase();
+
+  // Completed: delivered AND payment captured
+  // Completed: delivered AND payment captured
+  if (fulfillment === "delivered" && payment === "captured") {
+    return "completed";
+  }
+
+  // Pending confirmation: explicitly not fulfilled
+  if (fulfillment === "not_fulfilled") {
+    return "pending";
+  }
+
+  // Shipping states (in-progress delivery) - include fulfilled/shipped and partial states
+  const shippingStates = new Set([
+    "fulfilled",
+    "partially_fulfilled",
+    "partially_shipped",
+    "shipped",
+    "partially_delivered",
+  ]);
+  if (shippingStates.has(fulfillment) || fulfillment.includes("ship") || fulfillment.includes("fulfill")) {
+    return "shipping";
+  }
+
+  // Fallback: keep existing explicit completed status
   if (order?.status === "completed") {
     return "completed";
   }
 
-  // Prefer explicit fulfillment_status if present
-  const fulfillment = String(order?.fulfillment_status || "").toLowerCase();
-  if (fulfillment.includes("ship") || fulfillment.includes("deliver")) {
-    return "shipping";
-  }
-
-  // Fallback: infer status from item-level fulfillment/delivery quantities
+  // Fallback inference from item-level quantities (preserve previous heuristic)
   try {
     const items = order?.items || [];
     let totalQty = 0;

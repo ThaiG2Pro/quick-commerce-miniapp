@@ -1,12 +1,13 @@
 import { CartItem } from "@/types";
 import { formatPrice } from "@/utils/format";
 import { List } from "zmp-ui";
+import OptimizedImage from "@/components/optimized-image";
 
 function OrderItem(props: CartItem) {
   return (
     <List.Item
       prefix={
-        <img src={props.product.image} className="w-14 h-14 rounded-lg" />
+        <OptimizedImage src={props.product.image} className="w-14 h-14 rounded-lg" alt={props.product.name} />
       }
       suffix={
         <div className="text-sm font-medium flex items-center h-full">
