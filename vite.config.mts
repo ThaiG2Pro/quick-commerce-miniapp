@@ -27,23 +27,21 @@ export default () => {
       rollupOptions: {
         output: {
           manualChunks(id: string) {
-            if (!/node_modules/.test(id)) return undefined;
+            if (!id.includes('node_modules')) return undefined;
 
-            // Match package name, supports pnpm nested layout
-            const m = id.match(/node_modules(?:\/\.pnpm\/[^\/]+\/node_modules)?\/(?:@[^\/]+\/[^[\/]+|[^\/]+)/);
-            // Better capture group for package name
-            const m2 = id.match(/node_modules(?:\/\.pnpm\/[^\/]+\/node_modules)?\/(?:@[^\/]+\/[^[\/]+|[^\/]+)/);
+            // Use the last node_modules segment to support pnpm nested layout
+            const last = id.lastIndexOf('node_modules/');
+            if (last === -1) return undefined;
+            const after = id.slice(last + 'node_modules/'.length);
+            const parts = after.split('/');
+            const pkgName = parts[0].startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
 
-            const capture = id.match(/node_modules(?:\/\.pnpm\/[^\/]+\/node_modules)?\/(?:@[^\/]+\/[^[\/]+|[^\/]+)/);
-
-            // Use a more reliable capture for package name
-            const pkgMatch = id.match(/node_modules(?:\/\.pnpm\/[^\/]+\/node_modules)?\/(@?[^\/]+\/?[^\/]*)/);
-            const pkgName = pkgMatch ? pkgMatch[1] : id.split('node_modules/')[1].split('/')[0];
-
+            // Group react/react-dom into a dedicated chunk
             if (pkgName === 'react' || pkgName === 'react-dom' || pkgName.startsWith('react')) {
               return 'vendor-react';
             }
 
+            // Explicit mappings for large packages
             const map: Record<string, string> = {
               '@medusajs/js-sdk': 'vendor-medusa',
               'zmp-sdk': 'vendor-zmp',
@@ -57,6 +55,7 @@ export default () => {
 
             if (map[pkgName]) return map[pkgName];
 
+            // Per-package fallback to avoid a single large vendor chunk
             return `vendor-${pkgName.replace('/', '-')}`;
           }
         },
