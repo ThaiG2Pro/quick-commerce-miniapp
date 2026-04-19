@@ -4,24 +4,9 @@ import { useLocation, useMatches } from "react-router";
 
 const scrollPositions = {};
 
-function findElementWithScrollbar(rootElement: Element = document.body) {
-  if (rootElement.scrollHeight > rootElement.clientHeight) {
-    // If the element has a scrollbar, return it
-    return rootElement;
-  }
-
-  // If the element doesn't have a scrollbar, check its child elements
-  for (let i = 0; i < rootElement.children.length; i++) {
-    const childElement = rootElement.children[i];
-    const elementWithScrollbar = findElementWithScrollbar(childElement);
-    if (elementWithScrollbar) {
-      // If a child element has a scrollbar, return it
-      return elementWithScrollbar;
-    }
-  }
-
-  // If none of the child elements have a scrollbar, return null
-  return null;
+function findElementWithScrollbar() {
+  // Prefer the browser's scrolling element; fall back to body
+  return (document.scrollingElement as Element) || document.body;
 }
 
 export const ScrollRestoration: FC = () => {
@@ -40,12 +25,17 @@ export const ScrollRestoration: FC = () => {
           // Scroll to the previous position on this new location
           content.scrollTo(0, scrollPositions[key]);
         }
-        const saveScrollPosition = (e: Event) => {
-          // Save position on scroll
-          scrollPositions[key] = content.scrollTop;
+        let ticking = false;
+        const saveScrollPosition = () => {
+          if (ticking) return;
+          ticking = true;
+          requestAnimationFrame(() => {
+            scrollPositions[key] = (content as Element).scrollTop;
+            ticking = false;
+          });
         };
-        content.addEventListener("scroll", saveScrollPosition);
-        return () => content.removeEventListener("scroll", saveScrollPosition);
+        content.addEventListener("scroll", saveScrollPosition, { passive: true });
+        return () => content.removeEventListener("scroll", saveScrollPosition, { passive: true });
       }
     }
     return () => {};

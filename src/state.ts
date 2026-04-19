@@ -553,19 +553,19 @@ export const addOrUpdateCartItemState = atom(
 
       const ensuredCartId = currentCartId as string;
 
-      let updatedCart;
+      let updatedCart: import("@/types").MedusaCart | undefined;
       if (newQuantity <= 0) {
         if (existingItem?.lineItemId) {
-          updatedCart = await removeLineItem(ensuredCartId, existingItem.lineItemId);
+          updatedCart = (await removeLineItem(ensuredCartId, existingItem.lineItemId)) as import("@/types").MedusaCart;
         } else {
-          updatedCart = await getCart(ensuredCartId);
+          updatedCart = (await getCart(ensuredCartId)) as import("@/types").MedusaCart;
         }
       } else if (existingItem?.lineItemId) {
-        updatedCart = await updateLineItem(
+        updatedCart = (await updateLineItem(
           ensuredCartId,
           existingItem.lineItemId,
           newQuantity
-        );
+        )) as import("@/types").MedusaCart;
       } else {
         if (!payload.product.variantId) {
           throw new Error("Missing variantId for product, cannot add to cart.");
@@ -575,15 +575,15 @@ export const addOrUpdateCartItemState = atom(
             "Product is not purchasable because calculated price is missing."
           );
         }
-        updatedCart = await addLineItem(
+        updatedCart = (await addLineItem(
           ensuredCartId,
           payload.product.variantId,
           newQuantity
-        );
+        )) as import("@/types").MedusaCart;
       }
 
       if (!updatedCart) {
-        updatedCart = await getCart(ensuredCartId);
+        updatedCart = (await getCart(ensuredCartId)) as import("@/types").MedusaCart;
       }
 
       set(cartState, transformMedusaCart(updatedCart));
@@ -821,7 +821,7 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
             const storedGuestEmail = typeof window !== "undefined" ? getStoredGuestEmail() : null;
             if (storedGuestEmail) {
               try {
-                await updateCartContact(cartId, { email: storedGuestEmail });
+                await updateCartContact(cartId as string, { email: storedGuestEmail });
               } catch (e) {
                 console.warn("Failed to attach guest email to cart during bootstrap:", e);
               }
@@ -846,7 +846,7 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
         );
         // get shipping option from cart exis previous 
         try {
-          await set(prefetchShippingOptionsState, cartId);
+          await set(prefetchShippingOptionsState, cartId as string);
         } catch (prefetchError) {
           console.warn("Failed to prefetch shipping options during bootstrap:", prefetchError);
         }
@@ -949,7 +949,7 @@ export const selectShippingOptionState = atom(
         });
       }
 
-      const updatedCart = await addCartShippingMethod(cartId, shippingOptionId);
+      const updatedCart = (await addCartShippingMethod(cartId, shippingOptionId)) as import("@/types").MedusaCart;
       set(cartState, transformMedusaCart(updatedCart));
       set(cartPricingState, transformMedusaCartPricing(updatedCart));
       set(
@@ -989,7 +989,7 @@ export const applyPromotionCodeState = atom(
     set(cartPromotionMutatingState, true);
     set(cartErrorState, null);
     try {
-      const updatedCart = await applyPromotionCodes(cartId, [normalizedCode]);
+      const updatedCart = (await applyPromotionCodes(cartId, [normalizedCode])) as import("@/types").MedusaCart;
       set(cartState, transformMedusaCart(updatedCart));
       set(cartPricingState, transformMedusaCartPricing(updatedCart));
       set(
@@ -1026,7 +1026,7 @@ export const removePromotionCodeState = atom(
     set(cartPromotionMutatingState, true);
     set(cartErrorState, null);
     try {
-      const updatedCart = await removePromotionCodes(cartId, [normalizedCode]);
+      const updatedCart = (await removePromotionCodes(cartId, [normalizedCode])) as import("@/types").MedusaCart;
       set(cartState, transformMedusaCart(updatedCart));
       set(cartPricingState, transformMedusaCartPricing(updatedCart));
       set(
@@ -1048,7 +1048,9 @@ export const keywordState = atom("");
 export const searchResultState = atom(async (get) => {
   const keyword = get(keywordState);
   const products = await get(productsState);
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+  if (import.meta.env.DEV) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
   return products.filter((product) =>
     product.name.toLowerCase().includes(keyword.toLowerCase())
   );
@@ -1056,7 +1058,9 @@ export const searchResultState = atom(async (get) => {
 
 export const productsByCategoryHandleState = atomFamily((handle: string) =>
   atom(async (get) => {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (import.meta.env.DEV) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
 
     const categories = await get(categoriesState);
     const selectedCategory = categories.find((category) => category.handle === handle);

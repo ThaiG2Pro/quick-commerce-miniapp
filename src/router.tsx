@@ -1,18 +1,25 @@
 import Layout from "@/components/layout";
-import CartPage from "@/pages/cart";
-import CategoryDetailPage from "@/pages/catalog/category-detail";
-import CategoryListPage from "@/pages/catalog/category-list";
-import ProductDetailPage from "@/pages/catalog/product-detail";
-import HomePage from "@/pages/home";
-import ProfilePage from "@/pages/profile";
-import SearchPage from "@/pages/search";
+import React, { Suspense, lazy } from "react";
 import { createBrowserRouter } from "react-router-dom";
 import { getBasePath } from "@/utils/zma";
-import OrdersPage from "./pages/orders";
-import ShippingAddressPage from "./pages/cart/shipping-address";
-import StationsPage from "./pages/cart/stations";
-import OrderDetailPage from "./pages/orders/detail";
-import ProfileEditorPage from "./pages/profile/editor";
+
+// Route-based code-splitting: lazy-load pages to reduce initial bundle
+const HomePage = lazy(() => import("@/pages/home"));
+const CategoryListPage = lazy(() => import("@/pages/catalog/category-list"));
+const CategoryDetailPage = lazy(() => import("@/pages/catalog/category-detail"));
+const ProductDetailPage = lazy(() => import("@/pages/catalog/product-detail"));
+const CartPage = lazy(() => import("@/pages/cart"));
+const ShippingAddressPage = lazy(() => import("./pages/cart/shipping-address"));
+const StationsPage = lazy(() => import("./pages/cart/stations"));
+const OrdersPage = lazy(() => import("./pages/orders"));
+const OrderDetailPage = lazy(() => import("./pages/orders/detail"));
+const ProfilePage = lazy(() => import("@/pages/profile"));
+const ProfileEditorPage = lazy(() => import("./pages/profile/editor"));
+const SearchPage = lazy(() => import("@/pages/search"));
+
+function wrap(node: React.ReactNode) {
+  return <Suspense fallback={<div />}>{node}</Suspense>;
+}
 
 const router = createBrowserRouter(
   [
@@ -22,7 +29,7 @@ const router = createBrowserRouter(
       children: [
         {
           path: "/",
-          element: <HomePage />,
+          element: wrap(<HomePage />),
           handle: {
             logo: true,
             search: true,
@@ -30,7 +37,7 @@ const router = createBrowserRouter(
         },
         {
           path: "/categories",
-          element: <CategoryListPage />,
+          element: wrap(<CategoryListPage />),
           handle: {
             title: "Danh mục",
             noBack: true,
@@ -38,21 +45,21 @@ const router = createBrowserRouter(
         },
         {
           path: "/orders/:status?",
-          element: <OrdersPage />,
+          element: wrap(<OrdersPage />),
           handle: {
             title: "Đơn hàng",
           },
         },
         {
           path: "/order/:id",
-          element: <OrderDetailPage />,
+          element: wrap(<OrderDetailPage />),
           handle: {
             title: "Thông tin đơn hàng",
           },
         },
         {
           path: "/cart",
-          element: <CartPage />,
+          element: wrap(<CartPage />),
           handle: {
             title: "Giỏ hàng",
             noBack: true,
@@ -61,7 +68,7 @@ const router = createBrowserRouter(
         },
         {
           path: "/shipping-address",
-          element: <ShippingAddressPage />,
+          element: wrap(<ShippingAddressPage />),
           handle: {
             title: "Địa chỉ nhận hàng",
             noFooter: true,
@@ -70,7 +77,7 @@ const router = createBrowserRouter(
         },
         {
           path: "/stations",
-          element: <StationsPage />,
+          element: wrap(<StationsPage />),
           handle: {
             title: "Điểm nhận hàng",
             noFooter: true,
@@ -78,14 +85,14 @@ const router = createBrowserRouter(
         },
         {
           path: "/profile",
-          element: <ProfilePage />,
+          element: wrap(<ProfilePage />),
           handle: {
             logo: true,
           },
         },
         {
           path: "/profile/edit",
-          element: <ProfileEditorPage />,
+          element: wrap(<ProfileEditorPage />),
           handle: {
             title: "Thông tin tài khoản",
             noFooter: true,
@@ -94,7 +101,7 @@ const router = createBrowserRouter(
         },
         {
           path: "/category/:handle",
-          element: <CategoryDetailPage />,
+          element: wrap(<CategoryDetailPage />),
           handle: {
             search: true,
             title: ({ categories, params }) =>
@@ -103,7 +110,7 @@ const router = createBrowserRouter(
         },
         {
           path: "/product/:id",
-          element: <ProductDetailPage />,
+          element: wrap(<ProductDetailPage />),
           handle: {
             scrollRestoration: 0, // when user selects another product in related products, scroll to the top of the page
             noFloatingCart: true,
@@ -111,7 +118,7 @@ const router = createBrowserRouter(
         },
         {
           path: "/search",
-          element: <SearchPage />,
+          element: wrap(<SearchPage />),
           handle: {
             search: true,
             title: "Tìm kiếm",
