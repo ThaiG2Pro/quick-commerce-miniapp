@@ -56,8 +56,9 @@ export default () => {
 
             if (map[pkgName]) return map[pkgName];
 
-            // Per-package fallback to avoid a single large vendor chunk
-            return `vendor-${pkgName.replace('/', '-')}`;
+            // Group remaining small packages into a shared vendor-others chunk
+            // This avoids creating many tiny or empty per-package chunks
+            return `vendor-others`;
           }
         },
         plugins: [
