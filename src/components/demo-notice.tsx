@@ -44,7 +44,7 @@ export default function DemoNotice() {
           <p>
             Đây là phiên bản demo của ứng dụng. Chúng tôi không thu thập hay yêu cầu thông tin
             cá nhân của bạn (ví dụ: email, họ tên, số điện thoại, vị trí địa lý). Tất cả dữ liệu
-            hiển thị trong ứng dụng đều là dữ liệu mẫu được tạo sẵn cho mục đích trình diễn. Không
+            hiển thị trong ứng dụng đều là dữ liệu mẫu được tạo sẵn cho mục đích demo. Không
             có giao dịch thanh toán thực tế trong phiên bản này.
           </p>
           <p className="mt-3">
@@ -60,7 +60,7 @@ export default function DemoNotice() {
             onChange={(e) => setAgreed(e.target.checked)}
             aria-label="Tôi đồng ý với thông báo demo"
           />
-          <span className="text-foreground">Tôi đã đọc và đồng ý với thông báo</span>
+          <span className="text-foreground">Tôi đã đọc và đồng ý</span>
         </label>
 
         <div className="flex justify-end items-center gap-4">

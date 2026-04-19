@@ -34,9 +34,9 @@ function OrderSummary(props: { order: Order; full?: boolean }) {
             {
               {
                 pending: "Chờ xác nhận",
-                success: "Đã thanh toán",
-                failed: "Thanh toán thất bại",
-              }[props.order.paymentStatus]
+                shipping: "Đang giao",
+                completed: "Hoàn thành",
+              }[props.order.status]
             }
           </span>
         </div>

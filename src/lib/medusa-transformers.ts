@@ -266,6 +266,9 @@ export function transformMedusaCartPricing(cart: MedusaCart): CartPricing {
     promotionCodes: (cart.promotions ?? [])
       .map((promotion) => promotion.code)
       .filter((code): code is string => Boolean(code)),
+    promotions: (cart.promotions ?? [])
+      .map((p: any) => ({ code: p.code, isAutomatic: Boolean(p.is_automatic) }))
+      .filter((p: any) => typeof p.code === "string"),
     shippingMethodName: selectedShippingMethod?.shipping_option?.name,
   };
 }
@@ -275,12 +278,38 @@ function mapOrderStatus(order: any): OrderStatus {
     return "completed";
   }
 
+  // Prefer explicit fulfillment_status if present
   const fulfillment = String(order?.fulfillment_status || "").toLowerCase();
-  if (
-    fulfillment.includes("ship") ||
-    fulfillment.includes("deliver")
-  ) {
+  if (fulfillment.includes("ship") || fulfillment.includes("deliver")) {
     return "shipping";
+  }
+
+  // Fallback: infer status from item-level fulfillment/delivery quantities
+  try {
+    const items = order?.items || [];
+    let totalQty = 0;
+    let totalFulfilled = 0;
+    let totalDelivered = 0;
+
+    for (const it of items) {
+      const qty = Number(it?.quantity || 0);
+      const fulfilled = Number(it?.detail?.fulfilled_quantity || it?.fulfilled_quantity || 0);
+      const delivered = Number(it?.detail?.delivered_quantity || it?.delivered_quantity || 0);
+      totalQty += qty;
+      totalFulfilled += fulfilled;
+      totalDelivered += delivered;
+    }
+
+    if (totalQty > 0) {
+      if (totalDelivered > 0 && totalDelivered >= totalQty) {
+        return "completed";
+      }
+      if (totalFulfilled > 0 || totalDelivered > 0) {
+        return "shipping";
+      }
+    }
+  } catch (e) {
+    // ignore and fall through
   }
 
   return "pending";
@@ -384,7 +413,10 @@ export function transformMedusaOrders(orders: any[]): Order[] {
             type: "pickup",
             stationId: 0,
           },
-      total: order?.total || 0,
+      // Use order.total if present; otherwise compute from item totals as fallback
+      total: (typeof order?.total === "number" && order.total > 0)
+        ? order.total
+        : (order?.items || []).reduce((sum: number, it: any) => sum + (typeof it?.total === "number" ? it.total : (typeof it?.unit_price === "number" && typeof it?.quantity === "number" ? it.unit_price * it.quantity : 0)), 0),
       note:
         (order?.metadata?.note as string | undefined) ||
         (order?.customer_note as string | undefined) ||
@@ -402,43 +434,24 @@ export function transformMedusaOrders(orders: any[]): Order[] {
  * Filter orders by tab status based on Medusa order statuses
  * 
  * Tab mappings:
- * - all: All orders
- * - pending_confirmation: status=pending + fulfillment_status=not_fulfilled
- * - shipping: fulfillment_status=shipped
- * - awaiting_payment: fulfillment_status=delivered + payment_status=authorized (COD payment waiting)
+ * - pending_confirmation: status=pending (awaiting fulfillment)
+ * - shipping: fulfillment_status=shipped OR contains "deliver" in fulfillment_status
  * - completed: status=completed
- * - cancelled: status=canceled
  */
 export function filterOrdersByTab(orders: Order[], tabStatus: string): Order[] {
-  if (tabStatus === "all") {
-    return orders;
-  }
-
+  // Use the already mapped order.status (pending/shipping/completed) for filtering.
   return orders.filter((order) => {
-    const fulfillment = String(order.fulfillmentStatus || "").toLowerCase();
-    const medusaStatus = String(order.medusaStatus || "").toLowerCase();
-    const paymentStatus = String(order.paymentStatusRaw || "").toLowerCase();
+    const mappedStatus = String(order.status || "").toLowerCase();
 
     switch (tabStatus) {
       case "pending_confirmation":
-        // Pending orders waiting for fulfillment (admin hasn't created fulfillment yet)
-        return medusaStatus === "pending" && fulfillment === "not_fulfilled";
+        return mappedStatus === "pending";
 
       case "shipping":
-        // Orders that have been shipped
-        return fulfillment === "shipped";
-
-      case "awaiting_payment":
-        // Orders delivered but payment not captured (COD waiting for collection)
-        return fulfillment === "delivered" && paymentStatus === "authorized";
+        return mappedStatus === "shipping";
 
       case "completed":
-        // Orders fully completed
-        return medusaStatus === "completed";
-
-      case "cancelled":
-        // Cancelled orders
-        return medusaStatus === "canceled";
+        return mappedStatus === "completed";
 
       default:
         return true;

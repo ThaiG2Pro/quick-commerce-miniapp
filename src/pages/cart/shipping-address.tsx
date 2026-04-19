@@ -13,6 +13,7 @@ import {
   getCurrentCustomer,
   updateCartAddresses,
   upsertCurrentCustomerAddress,
+  updateCurrentCustomer,
 } from "@/lib/medusa-sdk";
 import { useEffect, useState } from "react";
 import { useHydrateCheckoutAddresses } from "@/hooks";
@@ -68,6 +69,26 @@ function ShippingAddressPage() {
           };
 
           await upsertCurrentCustomerAddress(normalizedAddress);
+
+          // Sync customer profile name/phone from address if provided
+          try {
+            function splitFullNameLocal(name: string) {
+              const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+              return { first_name: parts[0] || "", last_name: parts.slice(1).join(" ") || "" };
+            }
+
+            const { first_name, last_name } = splitFullNameLocal(normalizedAddress.name || "");
+            const updatePayload: { first_name?: string; last_name?: string; phone?: string } = {};
+            if (first_name) updatePayload.first_name = first_name;
+            if (last_name) updatePayload.last_name = last_name;
+            if (normalizedAddress.phone) updatePayload.phone = normalizedAddress.phone;
+
+            if (Object.keys(updatePayload).length) {
+              await updateCurrentCustomer(updatePayload);
+            }
+          } catch (err) {
+            console.warn("Failed to sync customer profile from address form:", err);
+          }
 
           if (cartId) {
             await updateCartAddresses(cartId, {

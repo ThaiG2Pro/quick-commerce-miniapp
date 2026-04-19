@@ -11,6 +11,14 @@ function OrderList(props: { ordersState: Atom<Promise<Order[]>> }) {
     useMemo(() => loadable(props.ordersState), [props.ordersState])
   );
 
+  // Debug: log loadable state so we can see what UI receives
+  try {
+    // eslint-disable-next-line no-console
+    console.log("[OrderList] loadable state:", orderList.state, "dataLength:", orderList.state === "hasData" ? (orderList.data as any).length : 0);
+  } catch (e) {
+    // ignore
+  }
+
   if (orderList.state === "hasData" && orderList.data.length === 0) {
     return <EmptyOrder />;
   }

@@ -74,6 +74,8 @@ export interface CartPricing {
   isTaxInclusive: boolean;
   promotionCodes: string[];
   shippingMethodName?: string;
+  // List of promotion metadata returned from server (includes automatic flag)
+  promotions?: Array<{ code: string; isAutomatic: boolean }>;
 }
 
 export interface ShippingOption {

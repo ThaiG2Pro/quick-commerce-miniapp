@@ -14,7 +14,7 @@ import { Icon } from "zmp-ui";
 
 export default function ApplyVoucher() {
   const [promoCode, setPromoCode] = useState("");
-  const { promotionCodes } = useAtomValue(cartTotalState);
+  const { promotionCodes, promotions } = useAtomValue(cartTotalState);
   const promotionMutating = useAtomValue(cartPromotionMutatingState);
   const applyPromotion = useSetAtom(applyPromotionCodeState);
   const removePromotion = useSetAtom(removePromotionCodeState);
@@ -75,9 +75,15 @@ export default function ApplyVoucher() {
                 className="flex items-center justify-between bg-background rounded-lg px-3 py-2"
               >
                 <div className="text-sm font-medium">{code}</div>
+                {
+                  /** Disable remove for automatic promotions */
+                }
                 <button
                   className="text-xs text-danger flex items-center space-x-1 disabled:opacity-50"
-                  disabled={promotionMutating}
+                  disabled={
+                    promotionMutating ||
+                    Boolean(promotions?.find((p) => p.code === code && p.isAutomatic))
+                  }
                   onClick={async () => {
                     try {
                       await removePromotion(code);

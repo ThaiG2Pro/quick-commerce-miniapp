@@ -2,6 +2,7 @@ import { atom } from "jotai";
 import {
   atomFamily,
   atomWithRefresh,
+  atomWithReset,
   atomWithStorage,
   loadable,
   unwrap,
@@ -85,6 +86,8 @@ const DEFAULT_STOREFRONT_PROFILE: StorefrontProfile = {
 };
 
 export const userInfoKeyState = atom(0);
+// A simple refresh key to force re-evaluation of orders atoms after bootstrap
+export const ordersRefreshKeyState = atom(0);
 
 function readStoredUserInfo(): UserInfo | undefined {
   const savedUserInfo = localStorage.getItem(CONFIG.STORAGE_KEYS.USER_INFO);
@@ -868,6 +871,13 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
     }
 
     set(storefrontBootstrapStatusState, "done");
+
+    // Notify orders atoms to refresh (some runtimes may skip auto-auth)
+    try {
+      set(ordersRefreshKeyState, (v) => (typeof v === "number" ? v + 1 : 1));
+    } catch (e) {
+      // ignore
+    }
   } catch (error) {
     console.error("Failed storefront bootstrap:", error);
     set(storefrontBootstrapStatusState, "idle");
@@ -1131,13 +1141,30 @@ export const selectedStationState = atom(async (get) => {
   return stations[index];
 });
 
-export const shippingAddressState = atom<ShippingAddress | undefined>(undefined);
-export const billingAddressState = atom<ShippingAddress | undefined>(undefined);
+export const shippingAddressState = atomWithReset<ShippingAddress | undefined>(
+  undefined
+);
+export const billingAddressState = atomWithReset<ShippingAddress | undefined>(
+  undefined
+);
 
 export const ordersState = atomFamily((tabStatus: string) =>
-  atomWithRefresh(async () => {
+  atomWithRefresh(async (get) => {
+    // Re-evaluate when bootstrap status changes so orders are fetched after guest auth completes
+    get(storefrontBootstrapStatusState);
+    // Also re-evaluate when ordersRefreshKeyState increments
+    get(ordersRefreshKeyState);
+
+    // Debug: log token presence when ordersState runs (use console.log so visible in all consoles)
+    try {
+      // eslint-disable-next-line no-console
+      console.log("[ordersState] medusa token present:", !!localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN));
+    } catch (e) {
+      // ignore storage access errors
+    }
+
     if (!localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN)) {
-      return [];
+      return []; 
     }
 
     try {
@@ -1145,9 +1172,26 @@ export const ordersState = atomFamily((tabStatus: string) =>
         limit: 50,
         offset: 0,
       });
+
+      // Debug: inspect counts through the transformation pipeline
+      try {
+        // eslint-disable-next-line no-console
+        console.log("[ordersState] medusaOrders length:", Array.isArray(medusaOrders) ? medusaOrders.length : 0);
+      } catch (e) {}
+
       const transformedOrders = transformMedusaOrders(medusaOrders);
+      try {
+        // eslint-disable-next-line no-console
+        console.log("[ordersState] transformedOrders length:", Array.isArray(transformedOrders) ? transformedOrders.length : 0);
+      } catch (e) {}
+
       const filteredOrders = filterOrdersByTab(transformedOrders, tabStatus)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+      try {
+        // eslint-disable-next-line no-console
+        console.log("[ordersState] filteredOrders length for tab", tabStatus, ":", Array.isArray(filteredOrders) ? filteredOrders.length : 0);
+      } catch (e) {}
 
       return filteredOrders;
     } catch (error) {

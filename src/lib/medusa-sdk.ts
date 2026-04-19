@@ -68,22 +68,27 @@ let cachedDefaultRegionId: string | null | undefined;
 // Ensure we request calculated prices and inventory-related fields for variants
 const CALCULATED_PRICE_FIELD = "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder";
 const ORDER_QUERY_FIELDS = [
-  "*shipping_address",
-  "*fulfillments",
-  "*items",
-  "+display_id",
-  "+status",
-  "+payment_status",
-  "+fulfillment_status",
-  "+created_at",
-  "+currency_code",
-  "+total",
-  "+metadata",
-  "+customer_note",
-  "+items.thumbnail",
-  "+items.title",
-  "+items.quantity",
-  "+items.unit_price",
+  "id",
+  "total",
+  "subtotal",
+  "tax_total",
+  "original_total",
+  "shipping_total",
+  "created_at",
+  "payment_status",
+  "fulfillment_status",
+  "currency_code",
+  "customer_note",
+  "metadata",
+  "display_id",
+  "items.thumbnail",
+  "items.title",
+  "items.quantity",
+  "items.unit_price",
+  "shipping_address.first_name",
+  "shipping_address.last_name",
+  "shipping_address.address_1",
+  "shipping_address.city",
 ].join(",");
 
 async function getDefaultRegionId() {
@@ -146,10 +151,10 @@ type MedusaCustomerAddress = {
 };
 
 function splitFullName(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
   return {
-    first_name: parts[0] || "Khach",
-    last_name: parts.slice(1).join(" ") || "hàng",
+    first_name: parts[0] || "",
+    last_name: parts.slice(1).join(" ") || "",
   };
 }
 
@@ -785,10 +790,30 @@ export async function getOrders(params?: {
   fields?: string;
 }) {
   try {
+    // Debug: show token presence when getOrders is called
+    try {
+      // eslint-disable-next-line no-console
+      console.log("[getOrders] medusa token present:", !!localStorage.getItem(CONFIG.STORAGE_KEYS.MEDUSA_AUTH_TOKEN));
+    } catch (e) {
+      // ignore
+    }
+
+    const fieldsToRequest = params?.fields || ORDER_QUERY_FIELDS;
     const response = await sdk.store.order.list({
       ...params,
-      fields: params?.fields || ORDER_QUERY_FIELDS,
+      fields: fieldsToRequest,
     });
+
+    try {
+      // eslint-disable-next-line no-console
+      console.log(
+        "[getOrders] fetched orders count:",
+        Array.isArray(response?.orders) ? response.orders.length : 0
+      );
+    } catch (e) {
+      // ignore
+    }
+
     return response.orders;
   } catch (error) {
     console.error("Error fetching orders:", error);
@@ -885,9 +910,8 @@ export async function upsertCurrentCustomerAddress(address: ShippingAddress) {
       fields: "id",
     });
     const existingAddress = transformMedusaCustomerAddressRecord(response.addresses?.[0]);
-    const body = {
-      first_name: splitFullName(address.name).first_name,
-      last_name: splitFullName(address.name).last_name,
+    const { first_name, last_name } = splitFullName(address.name || "");
+    const body: Record<string, unknown> = {
       address_1: address.address,
       address_2: address.address2,
       city: address.city,
@@ -899,6 +923,13 @@ export async function upsertCurrentCustomerAddress(address: ShippingAddress) {
         alias: address.alias || undefined,
       },
     };
+
+    if (first_name) {
+      body.first_name = first_name;
+    }
+    if (last_name) {
+      body.last_name = last_name;
+    }
 
     if (existingAddress?.id) {
       return await sdk.store.customer.updateAddress(existingAddress.id, body);
@@ -1549,7 +1580,7 @@ export async function performGuestAutoAuth(): Promise<{
             province: undefined,
             postalCode: "73000",
             countryCode: "vn",
-            name: `Thái hàng`,
+            name: `Thái`,
             phone: "0566464459",
           } as import("@/types").ShippingAddress;
 
