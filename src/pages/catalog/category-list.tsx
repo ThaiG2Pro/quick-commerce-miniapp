@@ -1,6 +1,7 @@
 import TransitionLink from "@/components/transition-link";
 import { useAtomValue } from "jotai";
 import { categoriesState } from "@/state";
+import OptimizedImage from "@/components/optimized-image";
 
 export default function CategoryListPage() {
   const categories = useAtomValue(categoriesState);
@@ -14,9 +15,11 @@ export default function CategoryListPage() {
           to={`/category/${category.handle}`}
         >
           <div className="px-1">
-            <img
+            <OptimizedImage
               src={category.image}
               className="aspect-square object-cover rounded-full bg-skeleton"
+              widths={[64,128,256]}
+              sizes="25vw"
               alt={category.name}
             />
           </div>

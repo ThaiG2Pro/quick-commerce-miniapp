@@ -10,23 +10,28 @@ import {
   qrCheckoutState,
 } from "@/state";
 import { formatPrice } from "@/utils/format";
-import { loadStripe } from "@stripe/stripe-js";
-import {
-  Elements,
-  PaymentElement,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js";
 import { useAtom, useAtomValue } from "jotai";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import OptimizedImage from "@/components/optimized-image";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "zmp-ui";
+
+// FEATURE FLAG: enable Stripe only when VITE_ENABLE_STRIPE === "true"
+const ENABLE_STRIPE = import.meta.env.VITE_ENABLE_STRIPE === "true";
+
+// Lazy-load the Stripe integration module when needed
+const LazyStripeCheckout = lazy(() =>
+  import("@/components/stripe-integration").then((m) => ({ default: m.StripeCheckoutFormWrapper }))
+);
+const LazyStripeRedirect = lazy(() =>
+  import("@/components/stripe-integration").then((m) => ({ default: m.StripeRedirectReturnWrapper }))
+);
+
 
 // Feature flag: show/hide tax explanatory text
 const SHOW_TAX_EXPLANATION = import.meta.env.VITE_SHOW_TAX_EXPLANATION === "true";
 
-const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "";
-const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
+// stripePromise is managed inside the dynamic stripe integration module when enabled
 
 function isStripeProvider(provider?: { id: string; name?: string } | null) {
   if (!provider) {
@@ -72,10 +77,13 @@ function QRCodeDisplay({
     <div className="px-4 pb-4 space-y-3">
       <div className="text-xs text-subtitle text-center mb-2">{message}</div>
       <div className="flex justify-center bg-white p-4 rounded-lg">
-        <img
+        <OptimizedImage
           src={qrCodeUrl}
           alt="QR Code"
           className="w-[300px] h-[300px] object-contain"
+          widths={[300,600]}
+          sizes="300px"
+          priority
           onError={() => setMessage("Không thể tải mã QR")}
         />
       </div>
@@ -258,16 +266,21 @@ export default function Pay() {
       )}
 
       {canHandleStripeReturn ? (
-        <StripeRedirectReturn
-          clientSecret={redirectClientSecret!}
-          onComplete={completeStripePayment}
-        />
+        ENABLE_STRIPE ? (
+          <Suspense fallback={<div className="px-4 pb-3 text-xs">Đang tải Stripe...</div>}>
+            <LazyStripeRedirect clientSecret={redirectClientSecret!} onComplete={completeStripePayment} />
+          </Suspense>
+        ) : (
+          <div className="px-4 pb-3 text-xs text-red-600">Stripe tạm thời bị tắt.</div>
+        )
       ) : canRenderStripeForm ? (
-        <StripeCheckoutForm
-          clientSecret={stripeCheckout.clientSecret!}
-          onComplete={completeStripePayment}
-          onCancel={resetStripeCheckout}
-        />
+        ENABLE_STRIPE ? (
+          <Suspense fallback={<div className="px-4 pb-3 text-xs">Đang tải Stripe...</div>}>
+            <LazyStripeCheckout clientSecret={stripeCheckout.clientSecret!} onComplete={completeStripePayment} onCancel={resetStripeCheckout} />
+          </Suspense>
+        ) : (
+          <div className="px-4 pb-3 text-xs text-red-600">Stripe tạm thời bị tắt.</div>
+        )
       ) : canRenderQRCode ? (
         <QRCodeDisplay
           qrCodeUrl={qrCheckout.qrCodeUrl!}

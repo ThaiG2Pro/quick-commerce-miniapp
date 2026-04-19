@@ -5,6 +5,7 @@ import { useAtomValue } from "jotai";
 import { PropsWithChildren, useState } from "react";
 import { Icon } from "zmp-ui";
 import Register from "./register";
+import OptimizedImage from "@/components/optimized-image";
 import { DEFAULT_AVATAR_URL } from "@/lib/medusa-sdk";
 
 function UserInfo({ children }: PropsWithChildren) {
@@ -17,10 +18,12 @@ function UserInfo({ children }: PropsWithChildren) {
     return (
       <>
         <div className="bg-section rounded-lg p-4 flex items-center space-x-4 border-[0.5px] border-black/15">
-          <img
+          <OptimizedImage
             className="rounded-full h-10 w-10 object-cover"
             src={imgSrc}
             alt={name || "User avatar"}
+            widths={[40,80,160]}
+            sizes="40px"
             onError={() => {
               if (imgSrc !== DEFAULT_AVATAR_URL) setImgSrc(DEFAULT_AVATAR_URL);
             }}
