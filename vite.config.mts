@@ -27,15 +27,34 @@ export default () => {
       rollupOptions: {
         output: {
           manualChunks(id: string) {
-            if (id.includes("node_modules")) {
-              if (id.includes("react") || id.includes("react-dom")) return "vendor-react";
-              if (id.includes("@medusajs/js-sdk") || id.includes("medusa")) return "vendor-medusa";
-              if (id.includes("zmp-sdk") || id.includes("zmp-ui")) return "vendor-zmp";
-              if (id.includes("embla-carousel")) return "vendor-embla";
-              if (id.includes("@stripe")) return "vendor-stripe";
-              if (id.includes("jotai")) return "vendor-jotai";
-              return "vendor";
+            // Only split node_modules
+            if (!id.includes("node_modules")) return undefined;
+
+            // Extract package name from path: node_modules/<pkg>/... or node_modules/@scope/pkg/...
+            const parts = id.split('node_modules/')[1].split('/');
+            const pkgName = parts[0].startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
+
+            // Strongly group react/react-dom and related libs together
+            if (pkgName === 'react' || pkgName === 'react-dom' || pkgName.startsWith('react')) {
+              return 'vendor-react';
             }
+
+            // Explicit mappings for large libs
+            const map: Record<string, string> = {
+              '@medusajs/js-sdk': 'vendor-medusa',
+              'zmp-sdk': 'vendor-zmp',
+              'zmp-ui': 'vendor-zmp',
+              'embla-carousel': 'vendor-embla',
+              'embla-carousel-react': 'vendor-embla',
+              '@stripe/stripe-js': 'vendor-stripe',
+              '@stripe/react-stripe-js': 'vendor-stripe',
+              'jotai': 'vendor-jotai',
+            };
+
+            if (map[pkgName]) return map[pkgName];
+
+            // Fallback: create one chunk per package to avoid a single large `vendor` chunk
+            return `vendor-${pkgName.replace('/', '-')}`;
           }
         },
         plugins: [
