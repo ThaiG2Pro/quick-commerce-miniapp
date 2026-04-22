@@ -37,8 +37,11 @@ export default () => {
             const parts = after.split('/');
             const pkgName = parts[0].startsWith('@') ? `${parts[0]}/${parts[1]}` : parts[0];
 
-            // Group react/react-dom into a dedicated chunk
-            if (pkgName === 'react' || pkgName === 'react-dom' || pkgName.startsWith('react')) {
+            // Group only react core into a dedicated chunk.
+            // Do NOT include react-router, react-hot-toast, etc. — they depend
+            // on packages in other chunks which creates circular imports that
+            // break on Zalo's runtime.
+            if (pkgName === 'react' || pkgName === 'react-dom' || pkgName === 'scheduler') {
               return 'vendor-react';
             }
 
