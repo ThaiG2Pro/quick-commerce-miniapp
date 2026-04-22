@@ -755,56 +755,57 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
     // If no token exists, silently register and login a guest account
     await ensureGuestAuthOnBootstrap();
 
-    // Initialize user info from Medusa customer
-    try {
-      const customer = await getCurrentCustomer();
-      const userInfo = transformMedusaCustomerToUserInfo(customer);
-      if (userInfo) {
-        localStorage.setItem(CONFIG.STORAGE_KEYS.USER_INFO, JSON.stringify(userInfo));
-        // Notify atoms that user info changed so UI updates immediately
-        set(userInfoKeyState, (v) => (typeof v === "number" ? v + 1 : 1));
-      }
-    } catch (error) {
-      console.warn("Failed to initialize user info during bootstrap:", error);
-    }
-
+    // Phase 1: Run independent calls in parallel after auth is ready
     let regions = get(regionsCacheState);
-    if (!regions.length) {
-      regions = (await getRegions()) as MedusaRegionLite[];
-      set(regionsCacheState, regions);
+    const [customerResult, regionsResult, addressResult] = await Promise.allSettled([
+      // Initialize user info from Medusa customer
+      getCurrentCustomer().then((customer) => {
+        const userInfo = transformMedusaCustomerToUserInfo(customer);
+        if (userInfo) {
+          localStorage.setItem(CONFIG.STORAGE_KEYS.USER_INFO, JSON.stringify(userInfo));
+          set(userInfoKeyState, (v) => (typeof v === "number" ? v + 1 : 1));
+        }
+      }),
+      // Fetch regions (skip if cached)
+      regions.length
+        ? Promise.resolve(regions)
+        : (getRegions() as Promise<MedusaRegionLite[]>).then((r) => {
+            set(regionsCacheState, r);
+            return r;
+          }),
+      // Prefetch customer address
+      getCurrentCustomerAddress(),
+      // Prefetch stations (fire-and-forget, don't block)
+      get(stationsState).catch((e) =>
+        console.warn("Failed to prefetch stations during bootstrap:", e)
+      ),
+    ]);
+
+    if (customerResult.status === "rejected") {
+      console.warn("Failed to initialize user info during bootstrap:", customerResult.reason);
     }
 
-    try {
-      const customerAddress = await getCurrentCustomerAddress();
-      if (customerAddress) {
-        set(shippingAddressState, customerAddress);
-        set(billingAddressState, customerAddress);
-      } else {
-        // Fallback to default address for guest users
-        const defaultAddress = createDefaultShippingAddress();
-        set(shippingAddressState, defaultAddress);
-        set(billingAddressState, defaultAddress);
+    if (regionsResult.status === "fulfilled") {
+      regions = regionsResult.value as MedusaRegionLite[];
+    } else {
+      console.warn("Failed to fetch regions during bootstrap:", regionsResult.reason);
+    }
+
+    if (addressResult.status === "fulfilled" && addressResult.value) {
+      set(shippingAddressState, addressResult.value);
+      set(billingAddressState, addressResult.value);
+    } else {
+      if (addressResult.status === "rejected") {
+        console.warn("Failed to prefetch customer address during bootstrap:", addressResult.reason);
       }
-    } catch (error) {
-      console.warn("Failed to prefetch customer address during bootstrap:", error);
-      // Still use default address as fallback on error
       const defaultAddress = createDefaultShippingAddress();
       set(shippingAddressState, defaultAddress);
       set(billingAddressState, defaultAddress);
     }
 
-    try {
-      await get(stationsState);
-    } catch (error) {
-      console.warn("Failed to prefetch stations during bootstrap:", error);
-    }
-
-    
-
+    // Phase 2: Create cart if needed (requires regions)
     let cartId = get(cartIdState);
 
-    // Always create a guest cart during bootstrap when no cartId exists.
-    // Previously this only created a cart for authenticated users (token present).
     if (!cartId) {
       const defaultRegionId = regions[0]?.id;
       if (defaultRegionId) {
@@ -813,7 +814,6 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
           cartId = createdCart.id;
           set(cartIdState, cartId);
 
-          // If guest email was generated during bootstrap, attach it to the cart
           try {
             const storedGuestEmail = typeof window !== "undefined" ? getStoredGuestEmail() : null;
             if (storedGuestEmail) {
@@ -832,22 +832,22 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
       }
     }
 
+    // Phase 3: Hydrate cart + prefetch payment providers in parallel
     if (cartId) {
-      try {
-        const medusaCart = await getCart(cartId);
+      const cartOps = Promise.resolve().then(async () => {
+        const medusaCart = await getCart(cartId as string);
         set(cartState, transformMedusaCart(medusaCart));
         set(cartPricingState, transformMedusaCartPricing(medusaCart));
         set(
           selectedShippingOptionIdState,
           medusaCart.shipping_methods?.[0]?.shipping_option?.id ?? null
         );
-        // get shipping option from cart exis previous 
         try {
           await set(prefetchShippingOptionsState, cartId as string);
         } catch (prefetchError) {
           console.warn("Failed to prefetch shipping options during bootstrap:", prefetchError);
         }
-      } catch (error) {
+      }).catch((error) => {
         const statusCode = getErrorStatusCode(error);
         if (statusCode === 404) {
           set(cartIdState, null);
@@ -859,12 +859,19 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
         } else {
           throw error;
         }
+      });
+
+      const paymentOps = get(paymentProvidersState).catch((error) => {
+        console.warn("Failed to prefetch payment providers during bootstrap:", error);
+      });
+
+      await Promise.all([cartOps, paymentOps]);
+    } else {
+      try {
+        await get(paymentProvidersState);
+      } catch (error) {
+        console.warn("Failed to prefetch payment providers during bootstrap:", error);
       }
-    }
-    try {
-      await get(paymentProvidersState);
-    } catch (error) {
-      console.warn("Failed to prefetch payment providers during bootstrap:", error);
     }
 
     set(storefrontBootstrapStatusState, "done");
