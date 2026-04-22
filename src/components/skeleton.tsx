@@ -1,58 +1,9 @@
 import Section from "./section";
 import HorizontalDivider from "./horizontal-divider";
-import Carousel from "./carousel";
-import { Button, Icon, List } from "zmp-ui";
+import { Icon, List } from "zmp-ui";
+import { Button } from "zmp-ui";
 
-export function PageSkeleton() {
-  return (
-    <div className="min-h-full bg-background">
-      <div className="bg-section pt-2">
-        <div className="px-4">
-          <div className="w-full h-12 rounded-lg bg-skeleton animate-pulse" />
-        </div>
-        <Carousel
-          slides={[1, 2, 3].map(() => (
-            <div className="w-full aspect-[2/1] rounded-[18px] bg-skeleton animate-pulse" />
-          ))}
-          disabled
-        />
-      </div>
-      <div className="bg-section space-y-2 mt-2">
-        <Section
-          title={
-            <div className="h-[18px] w-36 rounded-lg bg-skeleton animate-pulse" />
-          }
-        >
-          <div className="pt-2.5 pb-4 flex space-x-6 overflow-x-auto px-4">
-            {[1, 2, 3, 4].map((key) => (
-              <div
-                key={key}
-                className="flex flex-col items-center space-y-2 flex-none basis-[70px] overflow-hidden cursor-pointer"
-              >
-                <div className="w-[70px] h-[70px] object-cover rounded-full border-[0.5px] border-black/15 bg-skeleton animate-pulse" />
-                <div className="w-full h-9">
-                  <div className="w-full h-[18px] rounded-lg bg-skeleton animate-pulse"></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Section>
-      </div>
-      <HorizontalDivider />
-      <Section
-        title={
-          <div className="h-[18px] w-20 rounded-lg bg-skeleton animate-pulse" />
-        }
-      >
-        <div className="grid grid-cols-2 px-4 py-2 gap-4">
-          {[1, 2, 3, 4].map((key) => (
-            <ProductItemSkeleton key={key} />
-          ))}
-        </div>
-      </Section>
-    </div>
-  );
-}
+export { default as PageSkeleton } from "./page-skeleton";
 
 export function ProductItemSkeleton() {
   return (

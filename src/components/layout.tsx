@@ -1,13 +1,14 @@
 import { Outlet } from "react-router-dom";
 import Header from "./header";
 import Footer from "./footer";
-import { Suspense, useEffect } from "react";
-import { PageSkeleton } from "./skeleton";
+import { lazy, Suspense, useEffect } from "react";
+import PageSkeleton from "./page-skeleton";
 import { Toaster } from "react-hot-toast";
 import { ScrollRestoration } from "./scroll-restoration";
 import FloatingCartPreview from "./floating-cart-preview";
 import { useBootstrapStorefront } from "@/hooks";
-import DemoNotice from "./demo-notice";
+
+const DemoNotice = lazy(() => import("./demo-notice"));
 
 export default function Layout() {
   const bootstrapStorefront = useBootstrapStorefront();
@@ -25,7 +26,9 @@ export default function Layout() {
         </Suspense>
       </div>
       <Footer />
-      <DemoNotice />
+      <Suspense>
+        <DemoNotice />
+      </Suspense>
       <Toaster
         containerClassName="toast-container"
         containerStyle={{
