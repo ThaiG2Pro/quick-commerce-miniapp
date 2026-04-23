@@ -125,6 +125,8 @@ export type Delivery =
   | {
       type: "pickup";
       stationId: number;
+      name?: string;
+      address?: string;
     };
 
 export type OrderStatus = "pending" | "shipping" | "completed";

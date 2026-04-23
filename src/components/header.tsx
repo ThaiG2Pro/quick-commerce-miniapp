@@ -6,12 +6,12 @@ import {
   storefrontProfileStateUnwrapped,
 } from "@/state";
 import { useMemo } from "react";
-import { useRouteHandle } from "@/hooks";
+import { useRouteHandle } from "@/hooks/use-route-handle";
 import headerIllus from "@/static/header-illus.svg";
 import SearchBar from "./search-bar";
 import TransitionLink from "./transition-link";
 import { Icon } from "zmp-ui";
-import { DefaultUserAvatar } from "./vectors";
+import { DefaultUserAvatar } from "./icons";
 
 export default function Header() {
   const categories = useAtomValue(categoriesStateUpwrapped);

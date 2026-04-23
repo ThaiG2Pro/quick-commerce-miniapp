@@ -1,5 +1,5 @@
 import { Button } from "zmp-ui";
-import { MinusIcon, PlusIcon } from "./vectors";
+import { MinusIcon, PlusIcon } from "./icons";
 import { useEffect, useState } from "react";
 
 export interface QuantityInputProps {

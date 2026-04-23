@@ -1,6 +1,7 @@
 import Medusa from "@medusajs/js-sdk";
 import {
   LoyaltyProfile,
+  MedusaCart,
   ShippingAddress,
   Station,
   StorefrontProfile,
@@ -697,7 +698,7 @@ export async function calculateShippingOption(
  */
 export async function applyPromotionCodes(cartId: string, promoCodes: string[]) {
   try {
-    const response = await sdk.client.fetch<{ cart: unknown }>(
+    const response = await sdk.client.fetch<{ cart: MedusaCart }>(
       `/store/carts/${cartId}/promotions`,
       {
         method: "POST",
@@ -718,7 +719,7 @@ export async function applyPromotionCodes(cartId: string, promoCodes: string[]) 
  */
 export async function removePromotionCodes(cartId: string, promoCodes: string[]) {
   try {
-    const response = await sdk.client.fetch<{ cart: unknown }>(
+    const response = await sdk.client.fetch<{ cart: MedusaCart }>(
       `/store/carts/${cartId}/promotions`,
       {
         method: "DELETE",

@@ -9,7 +9,7 @@ import {
   PackageDeliveryIcon,
   PlusIcon,
   ShipperIcon,
-} from "@/components/vectors";
+} from "@/components/icons";
 import {
   cartMutatingState,
   deliveryModeState,

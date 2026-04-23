@@ -1,9 +1,9 @@
-import { CartIcon, CategoryIcon, HomeIcon, PackageIcon } from "./vectors";
+import { CartIcon, CategoryIcon, HomeIcon, PackageIcon } from "./icons";
 import HorizontalDivider from "./horizontal-divider";
 import { useAtomValue } from "jotai";
 import { cartTotalState } from "@/state";
 import TransitionLink from "./transition-link";
-import { useRouteHandle } from "@/hooks";
+import { useRouteHandle } from "@/hooks/use-route-handle";
 import Badge from "./badge";
 
 const NAV_ITEMS = [
@@ -40,8 +40,11 @@ const NAV_ITEMS = [
 export default function Footer() {
   const [handle] = useRouteHandle();
 
-  if (!handle?.noFooter) {
-    return (
+  if (handle?.noFooter) {
+    return null;
+  }
+
+  return (
       <>
         <HorizontalDivider />
         <div
@@ -75,5 +78,4 @@ export default function Footer() {
         </div>
       </>
     );
-  }
 }

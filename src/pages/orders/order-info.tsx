@@ -1,4 +1,4 @@
-import { HomeIcon, LocationMarkerLineIcon } from "@/components/vectors";
+import { HomeIcon, LocationMarkerLineIcon } from "@/components/icons";
 import { Order } from "@/types";
 import { Icon, List } from "zmp-ui";
 import DeliverySummary from "../cart/delivery-summary";

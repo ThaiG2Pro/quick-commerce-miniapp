@@ -1,5 +1,5 @@
 import Section from "@/components/section";
-import { VoucherIcon } from "@/components/vectors";
+import { VoucherIcon } from "@/components/icons";
 import {
   applyPromotionCodeState,
   cartPromotionMutatingState,
@@ -14,7 +14,7 @@ import { Icon } from "zmp-ui";
 
 export default function ApplyVoucher() {
   const [promoCode, setPromoCode] = useState("");
-  const { promotionCodes, promotions } = useAtomValue(cartTotalState);
+  const { promotionCodes } = useAtomValue(cartTotalState);
   const promotionMutating = useAtomValue(cartPromotionMutatingState);
   const applyPromotion = useSetAtom(applyPromotionCodeState);
   const removePromotion = useSetAtom(removePromotionCodeState);
@@ -80,10 +80,7 @@ export default function ApplyVoucher() {
                 }
                 <button
                   className="text-xs text-danger flex items-center space-x-1 disabled:opacity-50"
-                  disabled={
-                    promotionMutating ||
-                    Boolean(promotions?.find((p) => p.code === code && p.isAutomatic))
-                  }
+                  disabled={promotionMutating}
                   onClick={async () => {
                     try {
                       await removePromotion(code);

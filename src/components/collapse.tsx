@@ -1,5 +1,5 @@
 import { Fragment, ReactNode, useEffect, useRef, useState } from "react";
-import { MinusIcon, PlusIcon } from "./vectors";
+import { MinusIcon, PlusIcon } from "./icons";
 import HorizontalDivider from "./horizontal-divider";
 import { useRealHeight } from "@/hooks";
 import { animated, useSpring, useSpringValue } from "@react-spring/web";

@@ -1,10 +1,10 @@
 import { useAtomValue } from "jotai";
 import Badge from "./badge";
-import { CartIcon } from "./vectors";
+import { CartIcon } from "./icons";
 import { cartTotalState } from "@/state";
 import { formatPrice } from "@/utils/format";
 import TransitionLink from "./transition-link";
-import { useRouteHandle } from "@/hooks";
+import { useRouteHandle } from "@/hooks/use-route-handle";
 
 function FloatingCartPreview() {
   const { totalItems, totalAmount, currencyCode } = useAtomValue(cartTotalState);

@@ -758,48 +758,57 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
     // If no token exists, silently register and login a guest account
     await ensureGuestAuthOnBootstrap();
 
-    // Initialize user info from Medusa customer
-    try {
-      const customer = await getCurrentCustomer();
-      const userInfo = transformMedusaCustomerToUserInfo(customer);
-      if (userInfo) {
-        localStorage.setItem(CONFIG.STORAGE_KEYS.USER_INFO, JSON.stringify(userInfo));
-        // Notify atoms that user info changed so UI updates immediately
-        set(userInfoKeyState, (v) => (typeof v === "number" ? v + 1 : 1));
-      }
-    } catch (error) {
-      console.warn("Failed to initialize user info during bootstrap:", error);
-    }
-
+    // Group 1: Run independent API calls in parallel after auth
     let regions = get(regionsCacheState);
-    if (!regions.length) {
-      regions = (await getRegions()) as MedusaRegionLite[];
-      set(regionsCacheState, regions);
+    const needRegions = !regions.length;
+
+    const wrap = <T,>(p: Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> =>
+      p.then((value) => ({ ok: true as const, value }), (error) => ({ ok: false as const, error }));
+
+    const [customerResult, regionsResult, addressResult] = await Promise.all([
+      wrap(getCurrentCustomer()),
+      wrap(needRegions ? getRegions() as Promise<MedusaRegionLite[]> : Promise.resolve(regions)),
+      wrap(getCurrentCustomerAddress()),
+    ]);
+    // Also prefetch stations in background (fire-and-forget, don't block)
+    get(stationsState).catch((error) => {
+      console.warn("Failed to prefetch stations during bootstrap:", error);
+    });
+
+    // Process customer result
+    if (customerResult.ok && customerResult.value) {
+      try {
+        const userInfo = transformMedusaCustomerToUserInfo(customerResult.value);
+        if (userInfo) {
+          localStorage.setItem(CONFIG.STORAGE_KEYS.USER_INFO, JSON.stringify(userInfo));
+          set(userInfoKeyState, (v) => (typeof v === "number" ? v + 1 : 1));
+        }
+      } catch (error) {
+        console.warn("Failed to initialize user info during bootstrap:", error);
+      }
+    } else if (!customerResult.ok) {
+      console.warn("Failed to initialize user info during bootstrap:", customerResult.error);
     }
 
-    try {
-      const customerAddress = await getCurrentCustomerAddress();
-      if (customerAddress) {
-        set(shippingAddressState, customerAddress);
-        set(billingAddressState, customerAddress);
-      } else {
-        // Fallback to default address for guest users
-        const defaultAddress = createDefaultShippingAddress();
-        set(shippingAddressState, defaultAddress);
-        set(billingAddressState, defaultAddress);
+    // Process regions result
+    if (regionsResult.ok && regionsResult.value) {
+      regions = regionsResult.value;
+      if (needRegions) {
+        set(regionsCacheState, regions);
       }
-    } catch (error) {
-      console.warn("Failed to prefetch customer address during bootstrap:", error);
-      // Still use default address as fallback on error
+    }
+
+    // Process address result
+    if (addressResult.ok && addressResult.value) {
+      set(shippingAddressState, addressResult.value);
+      set(billingAddressState, addressResult.value);
+    } else {
+      if (!addressResult.ok) {
+        console.warn("Failed to prefetch customer address during bootstrap:", addressResult.error);
+      }
       const defaultAddress = createDefaultShippingAddress();
       set(shippingAddressState, defaultAddress);
       set(billingAddressState, defaultAddress);
-    }
-
-    try {
-      await get(stationsState);
-    } catch (error) {
-      console.warn("Failed to prefetch stations during bootstrap:", error);
     }
 
     
@@ -821,7 +830,7 @@ export const bootstrapStorefrontState = atom(null, async (get, set) => {
             const storedGuestEmail = typeof window !== "undefined" ? getStoredGuestEmail() : null;
             if (storedGuestEmail) {
               try {
-                await updateCartContact(cartId, { email: storedGuestEmail });
+                await updateCartContact(cartId!, { email: storedGuestEmail });
               } catch (e) {
                 console.warn("Failed to attach guest email to cart during bootstrap:", e);
               }

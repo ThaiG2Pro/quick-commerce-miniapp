@@ -2,7 +2,7 @@ import {
   OrderHistoryIcon,
   PackageIcon,
   VoucherIcon,
-} from "@/components/vectors";
+} from "@/components/icons";
 import { useToBeImplemented } from "@/hooks";
 import { OrderStatus } from "@/types";
 import { useNavigate } from "react-router-dom";

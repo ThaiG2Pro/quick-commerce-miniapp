@@ -66,7 +66,7 @@ export default function ProductItem(props: ProductItemProps) {
               <div className="mt-0.5 text-sm font-bold text-primary truncate">
                 {hasPriceRange
                   ? `Từ ${formatPrice(
-                      props.product.priceMin,
+                      props.product.priceMin!,
                       props.product.currencyCode
                     )}`
                   : formatPrice(props.product.price, props.product.currencyCode)}

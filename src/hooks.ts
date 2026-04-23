@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import toast from "react-hot-toast";
-import { UIMatch, useMatches, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   cartState,
   cartIdState,
@@ -1000,21 +1000,5 @@ export function useCheckout() {
   };
 }
 
-export function useRouteHandle() {
-  const matches = useMatches() as UIMatch<
-    undefined,
-    | {
-        title?: string | Function;
-        logo?: boolean;
-        search?: boolean;
-        noFooter?: boolean;
-        noBack?: boolean;
-        noFloatingCart?: boolean;
-        scrollRestoration?: number;
-      }
-    | undefined
-  >[];
-  const lastMatch = matches[matches.length - 1];
+export { useRouteHandle } from "@/hooks/use-route-handle";
 
-  return [lastMatch.handle, lastMatch, matches] as const;
-}

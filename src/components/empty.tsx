@@ -1,4 +1,4 @@
-import { EmptyBoxIcon, EmptyCartIcon, SearchIconLarge } from "./vectors";
+import { EmptyBoxIcon, EmptyCartIcon, SearchIconLarge } from "./icons";
 
 export function EmptySearchResult() {
   return (

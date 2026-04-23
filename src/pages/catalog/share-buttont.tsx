@@ -1,4 +1,4 @@
-import { ShareDecor } from "@/components/vectors";
+import { ShareDecor } from "@/components/icons";
 import { Product } from "@/types";
 import { openShareSheet } from "zmp-sdk/apis";
 import { Icon } from "zmp-ui";
