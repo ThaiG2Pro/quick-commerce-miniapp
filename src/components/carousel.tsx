@@ -1,11 +1,8 @@
-// Polyfills
-import ResizeObserver from "resize-observer-polyfill";
-Object.assign(window, { ResizeObserver });
-
 import { ReactNode, useCallback, useEffect, useState } from "react";
-import { EmblaCarouselType } from "embla-carousel";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
+
+type EmblaCarouselType = ReturnType<typeof useEmblaCarousel>[1] extends infer A ? NonNullable<A> : never;
 
 type UseDotButtonType = {
   selectedIndex: number;
