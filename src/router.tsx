@@ -1,18 +1,20 @@
+import { lazy } from "react";
 import Layout from "@/components/layout";
-import CartPage from "@/pages/cart";
-import CategoryDetailPage from "@/pages/catalog/category-detail";
-import CategoryListPage from "@/pages/catalog/category-list";
-import ProductDetailPage from "@/pages/catalog/product-detail";
-import HomePage from "@/pages/home";
-import ProfilePage from "@/pages/profile";
-import SearchPage from "@/pages/search";
 import { createBrowserRouter } from "react-router-dom";
 import { getBasePath } from "@/utils/zma";
-import OrdersPage from "./pages/orders";
-import ShippingAddressPage from "./pages/cart/shipping-address";
-import StationsPage from "./pages/cart/stations";
-import OrderDetailPage from "./pages/orders/detail";
-import ProfileEditorPage from "./pages/profile/editor";
+
+const HomePage = lazy(() => import("@/pages/home"));
+const CartPage = lazy(() => import("@/pages/cart"));
+const CategoryDetailPage = lazy(() => import("@/pages/catalog/category-detail"));
+const CategoryListPage = lazy(() => import("@/pages/catalog/category-list"));
+const ProductDetailPage = lazy(() => import("@/pages/catalog/product-detail"));
+const ProfilePage = lazy(() => import("@/pages/profile"));
+const SearchPage = lazy(() => import("@/pages/search"));
+const OrdersPage = lazy(() => import("./pages/orders"));
+const ShippingAddressPage = lazy(() => import("./pages/cart/shipping-address"));
+const StationsPage = lazy(() => import("./pages/cart/stations"));
+const OrderDetailPage = lazy(() => import("./pages/orders/detail"));
+const ProfileEditorPage = lazy(() => import("./pages/profile/editor"));
 
 const router = createBrowserRouter(
   [
