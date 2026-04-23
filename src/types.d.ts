@@ -129,7 +129,7 @@ export type Delivery =
       address?: string;
     };
 
-export type OrderStatus = "pending" | "shipping" | "completed";
+export type OrderStatus = "pending" | "fulfilled" | "shipping" | "completed";
 export type PaymentStatus = "pending" | "success" | "failed";
 export type OrderTabStatus = "all" | "pending_confirmation" | "shipping" | "awaiting_payment" | "completed" | "cancelled";
 

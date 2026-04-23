@@ -204,28 +204,7 @@ export default function Pay() {
               Phương thức: {shippingMethodName}
             </div>
           )}
-          <div className="flex justify-between">
-            <span className="text-subtitle">Thuế</span>
-            <span>{formatPrice(taxAmount, currencyCode)}</span>
-          </div>
-          {SHOW_TAX_EXPLANATION && isTaxInclusive && taxAmount > 0 && (
-            <div className="text-[11px] text-subtitle text-right">
-              Đã bao gồm {formatPrice(taxAmount, currencyCode)} tiền thuế VAT
-            </div>
-          )}
-          {SHOW_TAX_EXPLANATION && !isTaxInclusive && taxAmount > 0 && (
-            <div className="text-[11px] text-subtitle text-right">
-              Thuế được tính theo cấu hình khu vực và phương thức giao hàng.
-            </div>
-          )}
-          {SHOW_TAX_EXPLANATION && (
-            <>
-              <div className="h-px bg-black/10 my-1" />
-              <div className="text-[11px] text-subtitle">
-                Medusa tính lại thuế/khuyến mãi/phí ship theo cấu hình của cửa hàng.
-              </div>
-            </>
-          )}
+
           <div className="flex justify-between text-sm font-medium text-primary">
             <span>Tổng thanh toán</span>
             <span>{formatPrice(totalAmount, currencyCode)}</span>

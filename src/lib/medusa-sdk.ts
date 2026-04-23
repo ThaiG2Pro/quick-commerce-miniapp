@@ -1401,7 +1401,7 @@ export async function clearMedusaAuthFromStorage() {
 
 const GUEST_FIXED_PASSWORD = "password";
 const GUEST_EMAIL_DOMAIN = "@q-com.com";
-const GUEST_EMAIL_PREFIX = "guest_";
+const GUEST_EMAIL_PREFIX = "faker+";
 
 /**
  * Generate a UUIDv7-like string for guest email uniqueness.

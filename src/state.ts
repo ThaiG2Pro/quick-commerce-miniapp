@@ -1245,3 +1245,5 @@ export const deliveryModeState = atomWithStorage<Delivery["type"]>(
   CONFIG.STORAGE_KEYS.DELIVERY,
   "pickup"
 );
+
+export const showRatingNotificationState = atom(false);

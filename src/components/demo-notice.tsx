@@ -35,20 +35,20 @@ export default function DemoNotice() {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Demo notice"
+      aria-label="Beta notice"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
     >
       <div className="w-full max-w-xl bg-section rounded-lg shadow-lg p-6 text-sm md:text-base text-foreground">
-        <h3 className="text-lg font-semibold mb-3">Thông báo — Phiên bản DEMO</h3>
+        <h3 className="text-lg font-semibold mb-3">Thông báo — Phiên bản Beta</h3>
         <div className="max-h-[50vh] overflow-y-auto mb-4 leading-relaxed text-subtitle">
           <p>
-            Đây là phiên bản demo của ứng dụng. Chúng tôi không thu thập hay yêu cầu thông tin
-            cá nhân của bạn (ví dụ: email, họ tên, số điện thoại, vị trí địa lý). Tất cả dữ liệu
-            hiển thị trong ứng dụng đều là dữ liệu mẫu được tạo sẵn cho mục đích demo. Không
+            Đây là phiên bản thử nghiệm của ứng dụng. Chúng tôi không thu thập hay yêu cầu thông tin
+            cá nhân của bạn (ví dụ: email, họ tên, số điện thoại, vị trí địa lý). Tất cả dữ liệu liên quan người dùng 
+            hiển thị trong ứng dụng đều là dữ liệu mẫu được tạo sẵn cho mục đích thử nghiệm. Không
             có giao dịch thanh toán thực tế trong phiên bản này.
           </p>
           <p className="mt-3">
-            Xin vui lòng đọc và đồng ý để tiếp tục trải nghiệm. Cảm ơn bạn đã thử nghiệm ứng dụng!
+            Xin vui lòng đọc và đồng ý để tiếp tục trải nghiệm ứng dụng và đánh giá 5 sao nhé! Cảm ơn bạn đã thử nghiệm ứng dụng!
           </p>
         </div>
 
@@ -58,7 +58,7 @@ export default function DemoNotice() {
             className="w-4 h-4 text-primary"
             checked={agreed}
             onChange={(e) => setAgreed(e.target.checked)}
-            aria-label="Tôi đồng ý với thông báo demo"
+            aria-label="Tôi đồng ý với thông báo thử nghiệm"
           />
           <span className="text-foreground">Tôi đã đọc và đồng ý</span>
         </label>

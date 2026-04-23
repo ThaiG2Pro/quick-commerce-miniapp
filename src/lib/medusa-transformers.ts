@@ -274,45 +274,19 @@ export function transformMedusaCartPricing(cart: MedusaCart): CartPricing {
 }
 
 function mapOrderStatus(order: any): OrderStatus {
-  if (order?.status === "completed") {
-    return "completed";
-  }
-
-  // Prefer explicit fulfillment_status if present
   const fulfillment = String(order?.fulfillment_status || "").toLowerCase();
-  if (fulfillment.includes("ship") || fulfillment.includes("deliver")) {
-    return "shipping";
+  
+  switch (fulfillment) {
+    case "fulfilled":
+      return "fulfilled";
+    case "shipped":
+      return "shipping";
+    case "delivered":
+      return "completed";
+    case "not_fulfilled":
+    default:
+      return "pending";
   }
-
-  // Fallback: infer status from item-level fulfillment/delivery quantities
-  try {
-    const items = order?.items || [];
-    let totalQty = 0;
-    let totalFulfilled = 0;
-    let totalDelivered = 0;
-
-    for (const it of items) {
-      const qty = Number(it?.quantity || 0);
-      const fulfilled = Number(it?.detail?.fulfilled_quantity || it?.fulfilled_quantity || 0);
-      const delivered = Number(it?.detail?.delivered_quantity || it?.delivered_quantity || 0);
-      totalQty += qty;
-      totalFulfilled += fulfilled;
-      totalDelivered += delivered;
-    }
-
-    if (totalQty > 0) {
-      if (totalDelivered > 0 && totalDelivered >= totalQty) {
-        return "completed";
-      }
-      if (totalFulfilled > 0 || totalDelivered > 0) {
-        return "shipping";
-      }
-    }
-  } catch (e) {
-    // ignore and fall through
-  }
-
-  return "pending";
 }
 
 function mapPaymentStatus(order: any): PaymentStatus {
@@ -439,7 +413,7 @@ export function transformMedusaOrders(orders: any[]): Order[] {
  * - completed: status=completed
  */
 export function filterOrdersByTab(orders: Order[], tabStatus: string): Order[] {
-  // Use the already mapped order.status (pending/shipping/completed) for filtering.
+  // Use the already mapped order.status (pending/fulfilled/shipping/completed) for filtering.
   return orders.filter((order) => {
     const mappedStatus = String(order.status || "").toLowerCase();
 
@@ -448,7 +422,7 @@ export function filterOrdersByTab(orders: Order[], tabStatus: string): Order[] {
         return mappedStatus === "pending";
 
       case "shipping":
-        return mappedStatus === "shipping";
+        return mappedStatus === "shipping" || mappedStatus === "fulfilled";
 
       case "completed":
         return mappedStatus === "completed";

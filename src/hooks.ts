@@ -32,6 +32,7 @@ import {
   shippingAddressState,
   userInfoKeyState,
   userInfoState,
+  showRatingNotificationState,
 } from "@/state";
 import { Product, UserInfo } from "@/types";
 import { getConfig } from "@/utils/template";
@@ -514,6 +515,7 @@ export function useCheckout() {
   const hydrateCheckoutAddresses = useHydrateCheckoutAddresses();
   const navigate = useNavigate();
   const refreshNewOrders = useSetAtom(ordersState("pending"));
+  const setShowRatingNotification = useSetAtom(showRatingNotificationState);
 
   const resetCheckoutStateAfterSuccess = useCallback(() => {
     setCartError(null);
@@ -539,6 +541,7 @@ export function useCheckout() {
     });
     setCartPricing(null);
     refreshNewOrders();
+    setShowRatingNotification(true);
     navigate("/orders", {
       viewTransition: true,
     });
@@ -546,6 +549,7 @@ export function useCheckout() {
   }, [
     navigate,
     refreshNewOrders,
+    setShowRatingNotification,
     setCart,
     setCartId,
     setCartPricing,
