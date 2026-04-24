@@ -6,41 +6,15 @@ import {
   paymentProvidersState,
   selectedPaymentProviderIdState,
   selectedShippingOptionIdState,
-  stripeCheckoutState,
   qrCheckoutState,
 } from "@/state";
 import { formatPrice } from "@/utils/format";
-import { loadStripe } from "@stripe/stripe-js";
-import {
-  Elements,
-  PaymentElement,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js";
 import { useAtom, useAtomValue } from "jotai";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { Button } from "zmp-ui";
 
-// Feature flag: show/hide tax explanatory text
-const SHOW_TAX_EXPLANATION = import.meta.env.VITE_SHOW_TAX_EXPLANATION === "true";
-
-const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "";
-const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
-
-function isStripeProvider(provider?: { id: string; name?: string } | null) {
-  if (!provider) {
-    return false;
-  }
-
-  return /stripe/i.test(`${provider.id} ${provider.name || ""}`);
-}
-
 function isQRProvider(provider?: { id: string; name?: string } | null) {
-  if (!provider) {
-    return false;
-  }
-
+  if (!provider) return false;
   return /qr/i.test(`${provider.id} ${provider.name || ""}`);
 }
 
@@ -90,9 +64,7 @@ function QRCodeDisplay({
         </div>
       </div>
       {waitingConfirmation && (
-        <div className="text-xs text-primary text-center">
-          Chờ xác nhận
-        </div>
+        <div className="text-xs text-primary text-center">Chờ xác nhận</div>
       )}
       <Button
         className="w-full"
@@ -127,10 +99,8 @@ export default function Pay() {
     subtotalAmount,
     discountAmount,
     shippingAmount,
-    taxAmount,
     totalAmount,
     currencyCode,
-    isTaxInclusive,
     shippingMethodName,
   } = useAtomValue(cartTotalState);
   const cartMutating = useAtomValue(cartMutatingState);
@@ -138,17 +108,10 @@ export default function Pay() {
   const selectedShippingOptionId = useAtomValue(selectedShippingOptionIdState);
   const selectedPaymentProviderId = useAtomValue(selectedPaymentProviderIdState);
   const providers = useAtomValue(paymentProvidersState);
-  const stripeCheckout = useAtomValue(stripeCheckoutState);
   const qrCheckout = useAtomValue(qrCheckoutState);
-  const [searchParams] = useSearchParams();
-  const {
-    startPayment,
-    completeStripePayment,
-    completeQRPayment,
-    resetStripeCheckout,
-    resetQRCheckout,
-  } = useCheckout();
+  const { startPayment, completeQRPayment, resetQRCheckout } = useCheckout();
   const [paying, setPaying] = useState(false);
+
   const selectedPaymentProvider = useMemo(
     () =>
       providers.find((provider) => provider.id === selectedPaymentProviderId) ||
@@ -156,25 +119,12 @@ export default function Pay() {
       null,
     [providers, selectedPaymentProviderId]
   );
-  const redirectClientSecret = searchParams.get("payment_intent_client_secret");
-  const isStripeSelected = isStripeProvider(selectedPaymentProvider);
+
   const isQRSelected = isQRProvider(selectedPaymentProvider);
-  const canRenderStripeForm =
-    isStripeSelected &&
-    stripeCheckout.status === "ready" &&
-    stripeCheckout.clientSecret !== null &&
-    stripeCheckout.providerId === selectedPaymentProvider?.id;
   const canRenderQRCode =
     isQRSelected &&
     qrCheckout.status === "ready" &&
     qrCheckout.qrCodeUrl !== null;
-  const canHandleStripeReturn = Boolean(redirectClientSecret);
-
-  useEffect(() => {
-    if (!isStripeSelected && stripeCheckout.status !== "idle") {
-      resetStripeCheckout();
-    }
-  }, [isStripeSelected, resetStripeCheckout, stripeCheckout.status]);
 
   useEffect(() => {
     if (!isQRSelected && qrCheckout.status !== "idle") {
@@ -204,7 +154,6 @@ export default function Pay() {
               Phương thức: {shippingMethodName}
             </div>
           )}
-
           <div className="flex justify-between text-sm font-medium text-primary">
             <span>Tổng thanh toán</span>
             <span>{formatPrice(totalAmount, currencyCode)}</span>
@@ -222,32 +171,11 @@ export default function Pay() {
         <PaymentProviderSelector selectedShippingOptionId={selectedShippingOptionId} />
       </Suspense>
 
-      {stripeCheckout.error && (
-        <div className="px-4 pb-2 text-xs text-red-600">{stripeCheckout.error}</div>
-      )}
-
-      {stripeCheckout.status === "waiting_confirmation" && (
-        <div className="px-4 pb-2 text-xs text-subtitle">
-          Stripe đã xác nhận thanh toán, đang chờ hệ thống hoàn tất đơn hàng.
-        </div>
-      )}
-
       {qrCheckout.error && (
         <div className="px-4 pb-2 text-xs text-red-600">{qrCheckout.error}</div>
       )}
 
-      {canHandleStripeReturn ? (
-        <StripeRedirectReturn
-          clientSecret={redirectClientSecret!}
-          onComplete={completeStripePayment}
-        />
-      ) : canRenderStripeForm ? (
-        <StripeCheckoutForm
-          clientSecret={stripeCheckout.clientSecret!}
-          onComplete={completeStripePayment}
-          onCancel={resetStripeCheckout}
-        />
-      ) : canRenderQRCode ? (
+      {canRenderQRCode ? (
         <QRCodeDisplay
           qrCodeUrl={qrCheckout.qrCodeUrl!}
           transferAmount={qrCheckout.transferAmount ?? totalAmount}
@@ -266,31 +194,26 @@ export default function Pay() {
               try {
                 await startPayment(selectedPaymentProvider);
               } catch {
-                // toast/error state handled inside the checkout hook
+                // error state handled inside the checkout hook
               } finally {
                 setPaying(false);
               }
             }}
-              disabled={
-                paying ||
-                cartMutating ||
-                cartInitializing ||
-                stripeCheckout.status === "waiting_confirmation" ||
-                !selectedShippingOptionId ||
-                !selectedPaymentProvider
-              }
-            >
-            {paying ||
-            stripeCheckout.status === "preparing" ||
-            qrCheckout.status === "preparing"
+            disabled={
+              paying ||
+              cartMutating ||
+              cartInitializing ||
+              !selectedShippingOptionId ||
+              !selectedPaymentProvider
+            }
+          >
+            {paying || qrCheckout.status === "preparing"
               ? "Đang xử lý..."
-              : stripeCheckout.status === "waiting_confirmation"
-                ? "Đang chờ xác nhận..."
               : !selectedPaymentProvider
                 ? "Đang tải phương thức..."
                 : selectedShippingOptionId
-                ? "Thanh toán"
-                : "Chọn ship trước"}
+                  ? "Thanh toán"
+                  : "Chọn ship trước"}
           </Button>
         </div>
       )}
@@ -359,207 +282,4 @@ function PaymentProviderSelector({
       </div>
     </div>
   );
-}
-
-function StripeCheckoutForm({
-  clientSecret,
-  onComplete,
-  onCancel,
-}: {
-  clientSecret: string;
-  onComplete: (cartIdOverride?: string | null, paymentIntentStatus?: string) => Promise<void>;
-  onCancel: () => void;
-}) {
-  if (!stripePromise) {
-    return (
-      <div className="px-4 pb-3 text-xs text-red-600">
-        Thiếu VITE_STRIPE_PUBLISHABLE_KEY nên không thể hiển thị form Stripe.
-      </div>
-    );
-  }
-
-  return (
-    <Elements key={clientSecret} stripe={stripePromise} options={{ clientSecret }}>
-      <StripeCheckoutFormInner onComplete={onComplete} onCancel={onCancel} />
-    </Elements>
-  );
-}
-
-function StripeCheckoutFormInner({
-  onComplete,
-  onCancel,
-}: {
-  onComplete: (cartIdOverride?: string | null, paymentIntentStatus?: string) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  return (
-    <form
-      className="px-4 pb-3 space-y-3"
-      onSubmit={async (event) => {
-        event.preventDefault();
-        if (!stripe || !elements) {
-          setMessage("Stripe chưa sẵn sàng. Vui lòng thử lại.");
-          return;
-        }
-
-        setLoading(true);
-        setMessage(null);
-        try {
-          console.log("[Stripe Payment] Starting confirmPayment...");
-          const result = await stripe.confirmPayment({
-            elements,
-            confirmParams: {
-              return_url: window.location.href,
-            },
-            redirect: "if_required",
-          });
-
-          console.log("[Stripe Payment] confirmPayment result:", {
-            error: result.error?.message,
-            paymentIntentStatus: result.paymentIntent?.status,
-            paymentIntentId: result.paymentIntent?.id,
-          });
-
-          if (result.error) {
-            console.error("[Stripe Payment] Error:", result.error.message);
-            setMessage(result.error.message || "Thanh toán Stripe thất bại.");
-            setLoading(false);
-            return;
-          }
-
-          if (
-            result.paymentIntent?.status === "succeeded" ||
-            result.paymentIntent?.status === "requires_capture"
-          ) {
-            const status = result.paymentIntent.status;
-            console.log("[Stripe Payment] Payment confirmed, calling onComplete", status);
-            setMessage(
-              status === "requires_capture"
-                ? "Stripe đã xác nhận thanh toán, đang hoàn tất đơn hàng..."
-                : "Thanh toán thành công, đang hoàn tất đơn hàng..."
-            );
-            await onComplete(undefined, status);
-            return;
-          }
-
-          if (result.paymentIntent?.status === "processing") {
-            setMessage("Stripe đang xử lý thanh toán. Vui lòng chờ.");
-            setLoading(false);
-            return;
-          }
-
-          if (result.paymentIntent?.status) {
-            console.warn(
-              "[Stripe Payment] Unexpected status:",
-              result.paymentIntent.status
-            );
-            setMessage(
-              `Stripe trả về trạng thái ${result.paymentIntent.status}. Vui lòng thử lại.`
-            );
-            setLoading(false);
-            return;
-          }
-
-          console.warn("[Stripe Payment] No payment intent returned");
-          setMessage("Stripe đang xử lý thanh toán. Vui lòng chờ chuyển hướng.");
-          setLoading(false);
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error && error.message
-              ? error.message
-              : "Thanh toán Stripe thất bại.";
-          setMessage(errorMessage);
-        } finally {
-          setLoading(false);
-        }
-      }}
-    >
-      <PaymentElement />
-      {message && <div className="text-xs text-red-600">{message}</div>}
-      <div className="flex gap-2">
-        <Button htmlType="submit" className="flex-1" disabled={loading}>
-          {loading ? "Đang xác nhận..." : "Xác nhận thanh toán"}
-        </Button>
-        <Button htmlType="button" variant="secondary" onClick={onCancel} disabled={loading}>
-          Đổi phương thức
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function StripeRedirectReturn({
-  clientSecret,
-  onComplete,
-}: {
-  clientSecret: string;
-  onComplete: (cartIdOverride?: string | null, paymentIntentStatus?: string) => Promise<void>;
-}) {
-  const [message, setMessage] = useState("Đang xác minh kết quả thanh toán Stripe...");
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      if (!stripePromise) {
-        throw new Error("Thiếu cấu hình Stripe publishable key.");
-      }
-
-      const stripe = await stripePromise;
-      if (!stripe || cancelled) {
-        return;
-      }
-
-      const { paymentIntent, error } = await stripe.retrievePaymentIntent(clientSecret);
-      if (cancelled) {
-        return;
-      }
-
-      if (error) {
-        throw new Error(error.message || "Không thể xác minh thanh toán Stripe.");
-      }
-
-      if (!paymentIntent) {
-        throw new Error("Không nhận được payment intent từ Stripe.");
-      }
-
-      if (
-        paymentIntent.status !== "succeeded" &&
-        paymentIntent.status !== "requires_capture"
-      ) {
-        setMessage(`Stripe trả về trạng thái ${paymentIntent.status}.`);
-        return;
-      }
-
-      setMessage(
-        paymentIntent.status === "requires_capture"
-          ? "Stripe đã xác nhận thanh toán, đang hoàn tất đơn hàng..."
-          : "Thanh toán thành công, đang hoàn tất đơn hàng..."
-      );
-      await onComplete(undefined, paymentIntent.status);
-    };
-
-    run().catch((error) => {
-      if (cancelled) {
-        return;
-      }
-
-      const errorMessage =
-        error instanceof Error && error.message
-          ? error.message
-          : "Không thể hoàn tất xác minh Stripe.";
-      setMessage(errorMessage);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [clientSecret, onComplete]);
-
-  return <div className="px-4 pb-3 text-xs text-subtitle">{message}</div>;
 }

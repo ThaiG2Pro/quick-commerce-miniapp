@@ -3,11 +3,13 @@ import Header from "./header";
 import Footer from "./footer";
 import { Suspense, lazy, useEffect } from "react";
 import { PageSkeleton } from "./skeleton";
-import { Toaster } from "react-hot-toast";
 import { ScrollRestoration } from "./scroll-restoration";
 import FloatingCartPreview from "./floating-cart-preview";
 import { useBootstrapStorefront } from "@/hooks";
 const DemoNotice = lazy(() => import("./demo-notice"));
+const LazyToaster = lazy(() =>
+  import("react-hot-toast").then((m) => ({ default: m.Toaster }))
+);
 
 export default function Layout() {
   const bootstrapStorefront = useBootstrapStorefront();
@@ -28,12 +30,14 @@ export default function Layout() {
       <Suspense fallback={null}>
         <DemoNotice />
       </Suspense>
-      <Toaster
-        containerClassName="toast-container"
-        containerStyle={{
-          top: "calc(50% - 24px)",
-        }}
-      />
+      <Suspense fallback={null}>
+        <LazyToaster
+          containerClassName="toast-container"
+          containerStyle={{
+            top: "calc(50% - 24px)",
+          }}
+        />
+      </Suspense>
       <FloatingCartPreview />
       <ScrollRestoration />
     </div>

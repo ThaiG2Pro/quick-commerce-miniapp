@@ -547,30 +547,6 @@ function getPaymentSessions(paymentCollection?: MedusaPaymentCollection | null) 
   return paymentCollection.payment_sessions || paymentCollection.paymentSessions || [];
 }
 
-export function extractPaymentCollectionClientSecret(
-  paymentCollection?: MedusaPaymentCollection | null,
-  providerId?: string
-) {
-  const sessions = getPaymentSessions(paymentCollection);
-  const matchedSession =
-    (providerId &&
-      sessions.find((session) => session.provider_id === providerId)) ||
-    sessions[0];
-
-  if (!matchedSession) {
-    return undefined;
-  }
-
-  return (
-    matchedSession.client_secret ||
-    matchedSession.payment_intent_client_secret ||
-    matchedSession.data?.client_secret ||
-    matchedSession.data?.payment_intent_client_secret ||
-    matchedSession.provider_data?.client_secret ||
-    matchedSession.provider_data?.payment_intent_client_secret
-  );
-}
-
 export function extractQRCodeUrl(
   paymentSessionResponse: PaymentSessionInitResponse
 ): string | undefined {

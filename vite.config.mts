@@ -25,6 +25,21 @@ export default () => {
     build: {
       sourcemap: false,
       rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("node_modules")) {
+              if (id.includes("@medusajs")) {
+                return "vendor-medusa";
+              }
+              if (id.includes("zmp-ui") || id.includes("zmp-sdk")) {
+                return "vendor-ui";
+              }
+              if (id.includes("react-dom")) {
+                return "vendor-react";
+              }
+            }
+          },
+        },
         plugins: [
           visualizer({ filename: "www/bundle-report.html", title: "Bundle Report", gzip: true, brotli: true, open: false })
         ]

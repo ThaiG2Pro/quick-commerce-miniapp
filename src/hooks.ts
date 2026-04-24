@@ -27,7 +27,6 @@ import {
   regionsCacheState,
   selectedPaymentProviderIdState,
   selectedShippingOptionIdState,
-  stripeCheckoutState,
   qrCheckoutState,
   shippingAddressState,
   userInfoKeyState,
@@ -46,7 +45,6 @@ import {
   authenticateWithZaloAccessToken,
   completeCart,
   createCart,
-  extractPaymentCollectionClientSecret,
   extractQRPaymentDetails,
   getCurrentCustomer,
   getCurrentCustomerAddress,
@@ -500,7 +498,6 @@ export function useCheckout() {
   const [selectedPaymentProviderId, setSelectedPaymentProviderId] = useAtom(
     selectedPaymentProviderIdState
   );
-  const [, setStripeCheckout] = useAtom(stripeCheckoutState);
   const [, setQRCheckout] = useAtom(qrCheckoutState);
   const [selectedShippingOptionId, setSelectedShippingOptionId] = useAtom(
     selectedShippingOptionIdState
@@ -523,13 +520,6 @@ export function useCheckout() {
     setCartId(null);
     setSelectedShippingOptionId(null);
     setSelectedPaymentProviderId(null);
-    setStripeCheckout({
-      paymentCollectionId: null,
-      clientSecret: null,
-      providerId: null,
-      status: "idle",
-      error: null,
-    });
     setQRCheckout({
       qrCodeUrl: null,
       transferAmount: null,
@@ -556,7 +546,6 @@ export function useCheckout() {
     setCartError,
     setSelectedPaymentProviderId,
     setSelectedShippingOptionId,
-    setStripeCheckout,
     setQRCheckout,
   ]);
 
@@ -712,8 +701,6 @@ export function useCheckout() {
             activeCartId,
             checkoutCart,
             paymentProviderId,
-            isStripeProvider:
-              /stripe/i.test(`${paymentProviderId} ${provider?.name || ""}`),
             isQRProvider:
               /qr/i.test(`${paymentProviderId} ${provider?.name || ""}`),
           };
@@ -747,44 +734,6 @@ export function useCheckout() {
         }
 
         const checkoutData = await prepareCheckout(provider);
-        if (checkoutData.isStripeProvider) {
-          setStripeCheckout({
-            paymentCollectionId: null,
-            clientSecret: null,
-            providerId: checkoutData.paymentProviderId,
-            status: "preparing",
-            error: null,
-          });
-
-          const paymentSessionResponse = await initializeCartPaymentSessions(
-            checkoutData.activeCartId,
-            checkoutData.paymentProviderId
-          );
-          const paymentCollection = paymentSessionResponse.payment_collection || null;
-          const clientSecret = extractPaymentCollectionClientSecret(
-            paymentCollection,
-            checkoutData.paymentProviderId
-          );
-
-          if (!clientSecret) {
-            throw new Error("Không lấy được client_secret từ Stripe session.");
-          }
-
-          setStripeCheckout({
-            paymentCollectionId: paymentCollection?.id || null,
-            clientSecret,
-            providerId: checkoutData.paymentProviderId,
-            status: "ready",
-            error: null,
-          });
-
-          return {
-            mode: "stripe" as const,
-            clientSecret,
-            paymentCollectionId: paymentCollection?.id || null,
-            cartId: checkoutData.activeCartId,
-          };
-        }
 
         if (checkoutData.isQRProvider) {
           setQRCheckout({
@@ -846,11 +795,6 @@ export function useCheckout() {
             ? error.message
             : "Thanh toán thất bại. Vui lòng thử lại.";
         setCartError(message);
-        setStripeCheckout((current) => ({
-          ...current,
-          status: "error",
-          error: message,
-        }));
         setQRCheckout((current) => ({
           ...current,
           status: "error",
@@ -865,61 +809,8 @@ export function useCheckout() {
       prepareCheckout,
       resetCheckoutStateAfterSuccess,
       setCartError,
-      setStripeCheckout,
       setQRCheckout,
     ]
-  );
-
-  const completeStripePayment = useCallback(
-    async (cartIdOverride?: string | null, paymentIntentStatus?: string) => {
-      try {
-        const activeCartId = cartIdOverride || cartId;
-        if (!activeCartId) {
-          throw new Error("Giỏ hàng không còn tồn tại.");
-        }
-
-        console.log("[Stripe Payment] Completing payment for cart:", activeCartId);
-
-        setStripeCheckout((current) => ({
-          ...current,
-          status: "confirming",
-          error: null,
-        }));
-
-        await completeCart(activeCartId);
-        console.log("[Stripe Payment] Cart completed successfully");
-        resetCheckoutStateAfterSuccess();
-      } catch (error) {
-        console.warn("[Stripe Payment] Error completing payment:", error);
-        const message =
-          error instanceof Error && error.message
-            ? error.message
-            : "Thanh toán Stripe thất bại. Vui lòng thử lại";
-        const isRequiresCapture = paymentIntentStatus === "requires_capture";
-        const isWaitingForCapture =
-          isRequiresCapture && /cart_not_completed|chưa hoàn tất cart|not completed cart/i.test(message);
-
-        if (isWaitingForCapture) {
-          setStripeCheckout((current) => ({
-            ...current,
-            status: "waiting_confirmation",
-            error: null,
-          }));
-          toast("Stripe đã xác nhận thanh toán, đang chờ hệ thống hoàn tất đơn hàng.");
-          return;
-        }
-
-        setCartError(message);
-        setStripeCheckout((current) => ({
-          ...current,
-          status: "error",
-          error: message,
-        }));
-        toast.error(message);
-        throw error;
-      }
-    },
-    [cartId, completeCart, resetCheckoutStateAfterSuccess, setCartError, setStripeCheckout]
   );
 
   const completeQRPayment = useCallback(
@@ -930,8 +821,6 @@ export function useCheckout() {
           throw new Error("Giỏ hàng không còn tồn tại.");
         }
 
-        console.log("[QR Payment] Completing payment for cart:", activeCartId);
-
         setQRCheckout((current) => ({
           ...current,
           status: "confirming",
@@ -939,11 +828,9 @@ export function useCheckout() {
         }));
 
         await completeCart(activeCartId);
-        console.log("[QR Payment] Cart completed successfully");
         resetCheckoutStateAfterSuccess();
         return { confirmed: true as const };
       } catch (error) {
-        console.warn("[QR Payment] Error completing payment:", error);
         const message =
           error instanceof Error && error.message
             ? error.message
@@ -973,16 +860,6 @@ export function useCheckout() {
     [cartId, completeCart, resetCheckoutStateAfterSuccess, setCartError, setQRCheckout]
   );
 
-  const resetStripeCheckout = useCallback(() => {
-    setStripeCheckout({
-      paymentCollectionId: null,
-      clientSecret: null,
-      providerId: null,
-      status: "idle",
-      error: null,
-    });
-  }, [setStripeCheckout]);
-
   const resetQRCheckout = useCallback(() => {
     setQRCheckout({
       qrCodeUrl: null,
@@ -997,9 +874,7 @@ export function useCheckout() {
 
   return {
     startPayment,
-    completeStripePayment,
     completeQRPayment,
-    resetStripeCheckout,
     resetQRCheckout,
   };
 }

@@ -305,22 +305,6 @@ export const selectedPaymentProviderIdState = atomWithStorage<string | null>(
   null
 );
 
-export type StripeCheckoutState = {
-  paymentCollectionId: string | null;
-  clientSecret: string | null;
-  providerId: string | null;
-  status: "idle" | "preparing" | "ready" | "confirming" | "waiting_confirmation" | "error";
-  error: string | null;
-};
-
-export const stripeCheckoutState = atom<StripeCheckoutState>({
-  paymentCollectionId: null,
-  clientSecret: null,
-  providerId: null,
-  status: "idle",
-  error: null,
-});
-
 export type QRCheckoutState = {
   qrCodeUrl: string | null;
   transferAmount: number | null;
